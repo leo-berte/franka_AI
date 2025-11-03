@@ -38,7 +38,7 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetad
 """
 Run the code:
 
-python src/franka_ai/datasets/load_dataset.py
+python src/franka_ai/datasets/lerobot_example.py
 
 Visualize lerobot dataset uploaded in HF
 

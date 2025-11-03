@@ -34,6 +34,13 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 
+#  for batch in train_loader:
+#         # 1. Sposti tutto sul device
+#         batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+
+
+# seed_everything(40)
+
 
 
 def main(pretrained_path = None, learning_rate = 1e-4):
