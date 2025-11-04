@@ -3,7 +3,7 @@ import torch
 
 
 # TODO: 
-# 1) Do I want images close to each others or farther? And for proprioception?
+# 1) Do I want images close to each others or far in time? And for proprioception?
 
   
 def build_delta_timestamps(fps, N_h, N_c):
@@ -31,4 +31,5 @@ def build_delta_timestamps(fps, N_h, N_c):
         "observation.state": history,
         "action": chunk,
     }
+
     return delta_timestamps

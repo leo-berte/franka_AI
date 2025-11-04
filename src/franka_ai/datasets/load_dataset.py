@@ -1,5 +1,7 @@
 from torch.utils.data import Dataset, DataLoader, random_split
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.utils import dataset_to_policy_features
+from lerobot.configs.types import FeatureType
 from pprint import pprint
 import torch
 
@@ -11,6 +13,7 @@ from franka_ai.utils.seed_everything import make_worker_init_fn
 
 # TODO: 
 # 1) capire dove mettere transf per abs/rel poses + orientations
+# 2) nel training vengono normalizzate features, dove/chi calcola mean/std per ogni feature?
 
 
 
@@ -38,13 +41,14 @@ class TransformedDataset(Dataset):
 
 def make_dataloader(
     repo_id="lerobot/pusht", 
+    device=torch.device("cpu"),
     batch_size=32,
     shuffle=True,
     train_split=0.8, 
     num_workers=4, 
     seed_val=None, 
-    N_history=1,  
-    N_chunk=1, 
+    N_history=16,  
+    N_chunk=8, 
     fps=10, 
     local_root=None, 
     print_ds_info=False 
@@ -62,6 +66,7 @@ def make_dataloader(
 
     Args:
         repo_id: Hugging Face repo ID or dataset folder name
+        device: CPU or GPU
         batch_size: number of samples per batch
         shuffle: whether to shuffle the dataset
         train_split: training split ratio (0–1)
@@ -95,6 +100,11 @@ def make_dataloader(
         print(f"Camera keys: {dataset.meta.camera_keys}")
         print("Features:")
         pprint(dataset.features)
+        features = dataset_to_policy_features(dataset.features)
+        output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
+        input_features = {key: ft for key, ft in features.items() if key not in output_features}
+        print("Output features: \n", output_features)
+        print("Input features: \n", input_features)
 
     # fix seed for reproducibility
     if seed_val:
@@ -104,12 +114,12 @@ def make_dataloader(
 
     # Random split between training and validation
     num_items = len(dataset)
-    print("length dataset: ", num_items)
+    print("Total number of frames in the dataset: ", num_items)
     num_train = int(num_items * train_split)
     num_val = num_items - num_train
     train_ds, val_ds = random_split(dataset, [num_train, num_val], generator=torch.Generator())
-    print("train set: ", num_train)
-    print("valid set: ", num_val)
+    print("Total number of frames in the training dataset: ", num_train)
+    print("Total number of frames in the validation dataset: : ", num_val)
 
     # Get transformation pipeline (augmentations, normalization, etc.)
     train_tf = CustomTransforms(train=True)
@@ -126,10 +136,11 @@ def make_dataloader(
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers, # number of CPU processes that load data in parallel
-        pin_memory=True, # allocate CPU memory as pinned for faster CPU to GPU transfers
+        pin_memory=device.type!="cpu", # allocate CPU memory as pinned for faster CPU to GPU transfers
         prefetch_factor=2, # each worker preloads 2 batches ahead
         persistent_workers=True, # keep workers alive between epochs 
         worker_init_fn=worker_fn, # ensures each worker has a reproducible deterministic seed
+        drop_last=True # if the total number of samples is not divisible by batch_size, the last incomplete batch is dropped
     )
 
     val_loader = DataLoader(
@@ -137,10 +148,12 @@ def make_dataloader(
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
-        pin_memory=True,
+        pin_memory=device.type!="cpu",
         prefetch_factor=2,
         persistent_workers=True,
         worker_init_fn=worker_fn,
+        drop_last=True
+                        
     )
 
     return train_loader, val_loader

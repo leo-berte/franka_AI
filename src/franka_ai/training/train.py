@@ -1,75 +1,93 @@
-# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""This script demonstrates how to train Diffusion Policy on the PushT environment.
-
-Once you have trained a model with this script, you can try to evaluate it on
-examples/2_evaluate_pretrained_policy.py
-"""
-
-
-
+import matplotlib.pyplot as plt
 from pathlib import Path
-
+import collections
+import time
 import torch
+import csv
+import os
 
 from lerobot.configs.types import FeatureType
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 from lerobot.datasets.utils import dataset_to_policy_features
 from lerobot.policies.diffusion.configuration_diffusion import DiffusionConfig
 from lerobot.policies.diffusion.modeling_diffusion import DiffusionPolicy
+from lerobot.policies.factory import make_pre_post_processors
 
+from torch.nn.utils import clip_grad_norm_
 from torch.utils.tensorboard import SummaryWriter
 
+from franka_ai.utils.seed_everything import seed_everything
+from franka_ai.datasets.load_dataset import make_dataloader
+from franka_ai.training.utils import setup_folders, update_best_model_symlink
+
+# Set reproducibility
+SEED = 40
+seed_everything(SEED)
 
 
-#  for batch in train_loader:
-#         # 1. Sposti tutto sul device
-#         batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+"""
+Run the code: python src/franka_ai/training/train.py
+Activate tensorboard: (from where there is this code): python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/tensorboard
+"""
 
 
-# seed_everything(40)
+# TODO:
+# 0) define metrics to measure how much training / inference code is efficient (measure time, memory, ..)
+# 1) params da config file
+# 2) optimize training (see notes)
 
 
 
-def main(pretrained_path = None, learning_rate = 1e-4):
+# System / Efficiency Metrics
+
+# For understanding how efficiently training runs:
+
+# Metric	Why it matters
+# GPU utilization (%)	To ensure data pipeline isn’t the bottleneck.
+# GPU memory usage	To detect leaks or overly large batches.
+# CPU utilization	For DataLoader tuning.
+# Dataset loading time per batch	See if num_workers or transforms are slowing you down.
+
+
+# train_metrics = {
+#     "loss": AverageMeter("loss", ":.3f"),
+#     "grad_norm": AverageMeter("grdn", ":.3f"),
+#     "lr": AverageMeter("lr", ":0.1e"),
+#     "update_s": AverageMeter("updt_s", ":.3f"),
+#     "dataloading_s": AverageMeter("data_s", ":.3f"),
+
+
+
+
+
+def train(pretrained_path = None, learning_rate = 1e-4):
 
     """
+
+    INSERT CLEAN DESCRIPTION
+
     If pretrained_path is None → train from scratch.
     If pretrained_path is provided → fine-tune from checkpoint.
     """
 
-    # Get folder where this script lives
-    script_dir = Path(__file__).parent
+    # Get folders to save weights and tensorboard logs
+    checkpoints_dir, tensorboard_dir, tsbrd_writer = setup_folders()
 
-    # Create a directory to store the training checkpoint.
-    output_directory = script_dir / "outputs/train/example_pusht_diffusion"
-    output_directory.mkdir(parents=True, exist_ok=True)
+    # create CSV file to store training losses
+    csv_path = os.path.join(checkpoints_dir, "loss_log.csv")
+    with open(csv_path, mode="w", newline="") as f:
+        csv_writer = csv.writer(f)
+        csv_writer.writerow(["step", "train_loss", "val_loss"])
 
-    # Select your device
-    device = torch.device("cuda")
+    # Get parameters
+    # root_datasets_path = "temp" # magari preso in input da utente questo percorso? 
+    dataset_id="lerobot/pusht" # dataset folder name # magari preso in input da utente questo percorso? 
+    device = torch.device("cuda") # select your device
+    training_steps = 10 # number of training steps 
+    save_ckpt_freq = 3
 
-    # Number of training steps 
-    training_steps = 10 # 5000
-    log_freq = 1
-
-    # When starting from scratch (i.e. not from a pretrained policy), we need to specify 2 things before
-    # creating the policy:
-    #   - input/output shapes: to properly size the policy
-    #   - dataset stats: for normalization and denormalization of input/outputs 
-    # NB: for normalization, lerobot simply compute mean, std_dev for each feature [q1, q2, ..] over all frame in the dataset
-    dataset_metadata = LeRobotDatasetMetadata("lerobot/pusht")
+    # Get dataset input/output stats
+    dataset_metadata = LeRobotDatasetMetadata(dataset_id)
     features = dataset_to_policy_features(dataset_metadata.features)
     output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
     input_features = {key: ft for key, ft in features.items() if key not in output_features}
@@ -83,50 +101,33 @@ def main(pretrained_path = None, learning_rate = 1e-4):
 
     if pretrained_path is None:
         # From scratch
-        policy = DiffusionPolicy(cfg, dataset_stats=dataset_metadata.stats)
+        policy = DiffusionPolicy(cfg)
     else:
         # Load from checkpoint
         policy = DiffusionPolicy.from_pretrained(pretrained_path)
-        policy.dataset_stats = dataset_metadata.stats # it would be from a new dataset --> dataset_metadata_new.stats
         print(f"Loaded pretrained policy from {pretrained_path}")
 
+    # Set training mode
     policy.train() # during training layers like Dropout or BatchNorm are ON 
-    policy.to(device) # moves the model’s parameters to the correct device, since PyTorch operations require inputs and model to be on the same device
+    policy.to(device)
 
-    # # Another policy-dataset interaction is with the delta_timestamps. Each policy expects a given number frames
-    # # which can differ for inputs, outputs and rewards (if there are some).
-    # delta_timestamps = {
-    #     "observation.image": [i / dataset_metadata.fps for i in cfg.observation_delta_indices],
-    #     "observation.state": [i / dataset_metadata.fps for i in cfg.observation_delta_indices],
-    #     "action": [i / dataset_metadata.fps for i in cfg.action_delta_indices],
-    # }
+    # Get normalization stats (lerobot simply compute mean, std_dev for each feature [q1, q2, ..] over all frame in the dataset)
+    preprocessor, postprocessor = make_pre_post_processors(cfg, dataset_stats=dataset_metadata.stats)
 
-    # In this case with the standard configuration for Diffusion Policy, it is equivalent to this:
-    delta_timestamps = {
-        # Load the previous image and state at -0.1 seconds before current frame,
-        # then load current image and state corresponding to 0.0 second.
-        "observation.image": [-0.1, 0.0],
-        "observation.state": [-0.1, 0.0],
-        # Load the previous action (-0.1), the next action to be executed (0.0),
-        # and 14 future actions with a 0.1 seconds spacing. All these actions will be
-        # used to supervise the policy.
-        "action": [-0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4],
-    }
-
-    # We can then instantiate the dataset with these delta_timestamps configuration.
-    dataset = LeRobotDataset("lerobot/pusht", delta_timestamps=delta_timestamps)
+    # Dataloader
+    train_loader, val_loader = make_dataloader(
+        repo_id=dataset_id,
+        device=device,
+        seed_val=SEED,
+        batch_size=16,
+        N_history=2, 
+        N_chunk=16,
+        fps=10,
+        print_ds_info=True
+    )
 
     # Then we create our optimizer and dataloader for offline training.
     optimizer = torch.optim.Adam(policy.parameters(), lr=learning_rate) 
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
-        num_workers=4,
-        batch_size=64,
-        shuffle=True,
-        pin_memory=device.type != "cpu",
-        drop_last=True, # If the total number of samples is not divisible by batch_size, the last incomplete batch is dropped.
-                        # Ensures every batch has exactly batch_size samples.
-    )
 
     # -------------------
     # TRAINING LOOP
@@ -134,51 +135,123 @@ def main(pretrained_path = None, learning_rate = 1e-4):
 
     step = 0
     done = False
+    train_losses = []
+    val_losses = []
+    running_train_loss = 0.0
+    best_val_loss = float("inf")
 
-    tensorboard_dir = output_directory / "tensorboard"
-    writer = SummaryWriter(log_dir=tensorboard_dir)
-    # activate tensorboard (from where there is this code): python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/tensorboard
+    time_window = collections.deque(maxlen=50)
+    grad_norm_window = collections.deque(maxlen=50)
 
     while not done:
 
-        for batch in dataloader:
-
-            # This moves all tensor data in the batch to the GPU (device), if you’re using CUDA
-            # batch_example = {
-            #     "observation.state": torch.randn(32, 14),  # tensor
-            #     "action": torch.randn(32, 14),             # tensor
-            #     "episode_id": [0, 0, 0, ..., 0]            # list of ints
-            # }
-            # For each key k and value v in the batch:
-            # If v is a tensor → move it to device
-            # Otherwise → leave it as is
-            batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
+        for batch in train_loader:
             
+            # ???
+            step_start = time.perf_counter()
+
+            # batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
+            # batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+
+            # ???
+            batch = preprocessor(batch)
+
             # computes the loss (and optionally predictions)
             loss, _ = policy.forward(batch)
 
-            loss.backward()
-            optimizer.step()
+            loss.backward() # compute gradients
+            grad_norm_window.append(clip_grad_norm_(policy.parameters(), max_norm=float("inf")).item()) # measure gradients norm
+            optimizer.step() # do gradient step
             optimizer.zero_grad()
+            
+            # ???
+            time_window.append(time.perf_counter() - step_start)
 
-            if step % log_freq == 0:
-                print(f"step: {step} loss: {loss.item():.3f}")
+            # Accumulate training loss for averaging
+            running_train_loss += loss.item()
+
+            # Compute averaged train loss + validation loss periodically
+            if step % save_ckpt_freq == 0:
+                avg_train_loss = running_train_loss / save_ckpt_freq
+                train_losses.append(avg_train_loss)
+                running_train_loss = 0.0
+
+                # Run evaluation on validation set
+                policy.eval()
+                val_loss_total = 0.0
+                with torch.no_grad():
+                    for val_batch in val_loader:
+                        val_batch = preprocessor(val_batch)
+                        val_loss, _ = policy.forward(val_batch)
+                        val_loss_total += val_loss.item()
+                avg_val_loss = val_loss_total / len(val_loader)
+                val_losses.append(avg_val_loss)
+                print(f"step: {step} | train_loss={avg_train_loss:.4f} | val_loss={avg_val_loss:.4f}")
+                policy.train()
+
+                # Save checkpoint
+                ckpt_path = os.path.join(checkpoints_dir, f"step_{step:08d}.pt")
+                torch.save(policy.state_dict(), ckpt_path)
+
+                # Update symlink if it's the new best
+                best_val_loss = update_best_model_symlink(checkpoints_dir, ckpt_path, best_val_loss, avg_val_loss, step)
+
+                # append to CSV
+                with open(csv_path, mode="a", newline="") as f:
+                    csv_writer = csv.writer(f)
+                    csv_writer.writerow([step, avg_train_loss, avg_val_loss])
+                
+                # Compute metrics
+                avg_step_time = sum(time_window) / len(time_window)
+                avg_grad_norm = sum(grad_norm_window) / len(grad_norm_window)
+
+                # Log to TensorBoard
+                tsbrd_writer.add_scalar("Loss/train", avg_train_loss, step)
+                tsbrd_writer.add_scalar("Loss/val", avg_val_loss, step)
+                tsbrd_writer.add_scalar("Metrics/grad_norm", avg_grad_norm, step) # gradients magnitude
+                tsbrd_writer.add_scalar("Metrics/step_time_sec", avg_step_time, step) # latency for processing 1 batch (dataloader, forward + backward pass, optimizer update)
+                tsbrd_writer.add_scalar("Metrics/lr", optimizer.param_groups[0]["lr"], step) # learning rate
+            
             step += 1
             if step >= training_steps:
                 done = True
                 break
 
-            # Log to TensorBoard
-            writer.add_scalar("Loss/train", loss.item(), step)
+    # Save final weights
+    final_ckpt = os.path.join(checkpoints_dir, f"step_{step:08d}_final.pt")
+    torch.save(policy.state_dict(), final_ckpt)
+    # dump also config policy file to have policy params --> la nostra policy avrà config_file e config_struct? anche ACT, DP hannpo queste cose?
+    best_val_loss = update_best_model_symlink(checkpoints_dir, ckpt_path, best_val_loss, avg_val_loss, step)
+    print(f"Final checkpoint saved at: {final_ckpt}")
+    
+    # HF style
+    # policy.save_pretrained(checkpoints_dir)
+    # preprocessor.save_pretrained(checkpoints_dir)
+    # postprocessor.save_pretrained(checkpoints_dir)
 
-    # Save a policy checkpoint.
-    policy.save_pretrained(output_directory)
+    # Plot losses
+    plt.figure(figsize=(8, 5))
+    plt.plot(range(len(train_losses)), train_losses, label="Train Loss")
+    plt.plot(range(len(val_losses)), val_losses, label="Validation Loss")
+    plt.xlabel("Steps")
+    plt.ylabel("Loss")
+    plt.title("Training and Validation Loss")
+    plt.legend()
+    plt.grid(True)
+
+    # Save the plot
+    plot_path = os.path.join(checkpoints_dir, "loss_curve.png")
+    plt.savefig(plot_path, dpi=200)
+    print(f"Saved training curve at: {plot_path}")
+    plt.close()
 
 
 if __name__ == "__main__":
     
     # Example usage:
-    # main()  # from scratch
-    # main(pretrained_path="outputs/train/example_pusht_diffusion", learning_rate = 1e-5)  # fine-tune (lower learning rate)
+    # train()  # from scratch
+    # train(pretrained_path="outputs/train/example_pusht_diffusion", learning_rate = 1e-5)  # fine-tune (lower learning rate)
 
-    main()
+    train()
+
+

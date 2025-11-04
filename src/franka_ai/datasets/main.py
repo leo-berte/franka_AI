@@ -1,5 +1,8 @@
 from franka_ai.datasets.load_dataset import make_dataloader
 
+"""
+Run the code: python src/franka_ai/datasets/main.py
+"""
 
 # load dataset from HF
 train_loader, val_loader = make_dataloader(
