@@ -10,3 +10,4 @@ src/franka_ai/datasets/lerobot_example.py
 src/franka_ai/datasets/load_dataset.py
 src/franka_ai/datasets/main.py
 src/franka_ai/datasets/transforms.py
+src/franka_ai/datasets/utils.py

@@ -1,4 +1,6 @@
-# Kinematics & Dynamics
+# Franka AI
+
+https://github.com/huggingface/lerobot/blob/790d6740babad57398e20a956a23068d377640f0/examples/3_train_policy.py
 
 ## 1. Project structure
 

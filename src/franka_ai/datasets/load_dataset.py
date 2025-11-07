@@ -1,6 +1,6 @@
 from torch.utils.data import Dataset, DataLoader, random_split
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.datasets.utils import dataset_to_policy_features
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.common.datasets.utils import dataset_to_policy_features
 from lerobot.configs.types import FeatureType
 from pprint import pprint
 import torch
@@ -11,7 +11,7 @@ from franka_ai.utils.seed_everything import make_worker_init_fn
 
 
 
-# TODO: 
+# TODO:  
 # 1) capire dove mettere transf per abs/rel poses + orientations
 # 2) nel training vengono normalizzate features, dove/chi calcola mean/std per ogni feature?
 

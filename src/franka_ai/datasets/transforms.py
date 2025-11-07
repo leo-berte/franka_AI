@@ -5,6 +5,9 @@ import kornia.augmentation as K
 
 # TODO: 
 # 1) Check values resize, bright, ..
+# 2) normalization of features HERE?
+# 3) gripper continuous2dicsrete conversion
+# 4) orientation conversions
 
 
 class CustomTransforms():
@@ -76,9 +79,9 @@ class CustomTransforms():
                     v = v / 255.0 if v.max() > 1.5 else v # convert to [0,1]
                     sample[k] = self.img_tf_train(v) if self.train else self.img_tf_inference(v)
 
-            # Joint positions --> però poi devo cambiare anche Tcurr con DKINE ??
-            elif "observation.state" == k:
-                    sample[k] = self.joint_pos_transforms(v) if self.train else v
+            # # Joint positions --> però poi devo cambiare anche Tcurr con DKINE ??
+            # elif "observation.state" == k:
+            #         sample[k] = self.joint_pos_transforms(v) if self.train else v
 
             # Joint velocities
             elif "observation.joint_velocities" == k:

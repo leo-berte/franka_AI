@@ -32,7 +32,7 @@ import torch
 from huggingface_hub import HfApi
 
 import lerobot
-from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 
 
 """
@@ -77,8 +77,9 @@ lerobot-dataset-viz \
 # https://huggingface.co/datasets?other=LeRobot
 
 # Let's take this one for this example
-# repo_id = "lerobot/aloha_mobile_cabinet" --> need: LeRobotDataset(.., video_backend="pyav")
-repo_id = "lerobot/pusht"
+# repo_id = "lerobot/aloha_mobile_cabinet" --> may need: LeRobotDataset(.., video_backend="pyav")
+# repo_id = "lerobot/aloha_mobile_cabinet" 
+repo_id = "lerobot/droid_100"
 # We can have a look and fetch its metadata to know more about it:
 ds_meta = LeRobotDatasetMetadata(repo_id)
 
@@ -101,7 +102,7 @@ pprint(ds_meta.features)
 
 # You can then load the actual dataset from the hub.
 # Either load any subset of episodes:
-dataset = LeRobotDataset(repo_id, episodes=[0, 10, 11, 23])
+dataset = LeRobotDataset(repo_id, episodes=[0]) # episodes=[0, 10, 11, 23]
 
 # And see how many frames you have:
 print(f"Selected episodes: {dataset.episodes}")
@@ -109,7 +110,7 @@ print(f"Number of episodes selected: {dataset.num_episodes}")
 print(f"Number of frames selected: {dataset.num_frames}")
 
 # select data from current frame (it is a dictionary!)
-print(f"\n{dataset[0]['observation.image'].shape=}")  # (c, h, w)
+print(f"\n{dataset[0][dataset.meta.camera_keys[0]].shape=}")  # (c, h, w)
 print(f"{dataset[0]['observation.state'].shape=}")  # (1, c)
 print(f"{dataset[0]['action'].shape=}\n")  # (1, c)
 
@@ -131,8 +132,8 @@ print(dataset.meta)
 # episodes, you can access the frame indices of any episode using dataset.meta.episodes. Here, we access
 # frame indices associated to the first episode:
 episode_index = 0
-from_idx = dataset.meta.episodes["dataset_from_index"][episode_index]
-to_idx = dataset.meta.episodes["dataset_to_index"][episode_index]
+from_idx = dataset.episode_data_index["from"][episode_index].item()
+to_idx = dataset.episode_data_index["to"][episode_index].item()
 print(f"from_idx: {from_idx}") # 0
 print(f"to_idx: {to_idx}") # 1500
 
