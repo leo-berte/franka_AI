@@ -31,7 +31,7 @@ Activate tensorboard: (from where there is this code): python -m tensorboard.mai
 
 
 # TODO:
-# 1) params da config file
+# 1) params da config file oppure da argparser? ne basta uno dei due?
 # 2) optimize training (see notes)
 
 
@@ -55,8 +55,8 @@ def train(pretrained_path = None, learning_rate = 1e-4):
         csv_writer.writerow(["step", "train_loss", "val_loss"])
 
     # Get parameters
-    # root_datasets_path = "temp" # magari preso in input da utente questo percorso? 
-    dataset_id="lerobot/pusht" # dataset folder name # magari preso in input da utente questo percorso? 
+    root_dataset_path = "/home/leonardo/Documents/Coding/franka_AI/data/test1"
+    repo_id=None # "lerobot/pusht" # dataset folder name # magari preso in input da utente questo percorso? 
     # pretrained_path = None
     device = torch.device("cuda") # select your device
     training_steps = 12 # number of training steps [60000]
@@ -70,10 +70,10 @@ def train(pretrained_path = None, learning_rate = 1e-4):
     assert training_steps % save_ckpt_freq == 0, "training_steps must be a multiple of save_ckpt_freq to ensure final evaluation alignment"
 
     # Get dataset input/output stats
-    dataset_metadata = LeRobotDatasetMetadata(dataset_id)
+    dataset_metadata = LeRobotDatasetMetadata(repo_id=repo_id, root=root_dataset_path)
     features = dataset_to_policy_features(dataset_metadata.features)
     output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
-    input_features = {key: ft for key, ft in features.items() if key not in output_features}
+    input_features = {key: ft for key, ft in features.items() if key not in output_features and key != 'observation.images.gripper_camera_depth'}
 
     # Policies are initialized with a configuration class, in this case `DiffusionConfig`. 
     cfg = DiffusionConfig(input_features=input_features, output_features=output_features)
@@ -96,13 +96,14 @@ def train(pretrained_path = None, learning_rate = 1e-4):
 
     # Dataloader
     train_loader, val_loader = make_dataloader(
-        repo_id=dataset_id,
+        local_root=root_dataset_path,
+        visual_obs_names=['observation.images.front_cam1', 'observation.images.front_cam2', 'observation.images.front_cam3', 'observation.images.gripper_camera'],
         device=device,
         seed_val=SEED,
         batch_size=16,
         N_history=2, 
         N_chunk=16,
-        fps=10,
+        fps_sampling=10,
         print_ds_info=True
     )
 

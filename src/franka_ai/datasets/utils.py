@@ -6,30 +6,40 @@ import torch
 # 1) Do I want images close to each others or far in time? And for proprioception?
 
   
-def build_delta_timestamps(fps, N_h, N_c):
+def build_delta_timestamps(fps_dataset, fps_sampling, N_h, N_c, visual_obs_names):
 
     """
     Build the delta_timestamps dict for LeRobotDataset history and future.
 
     Args:
-        fps: dataset frame rate (frames per second)
+        fps_dataset: dataset original frame rate (frames per second)
+        fps_sampling: frame rate used to import the dataset (frames per second)
         N_h: number of history frames (including current)
         N_c: number of future action frames (including current)
-        camera_key: key name for camera observation in dataset
+        visual_obs_names: names for camera observations in dataset
     """
 
-    dt = 1 / fps
+    # adjust fps_dataset to fps_sampling
+    dt_dataset = 1 / fps_dataset
+    step = round(fps_dataset / fps_sampling) if fps_sampling else 1
 
     # history frames: [-2dt, -dt, ..., 0]
-    history = [-(i * dt) for i in range(N_h - 1, 0, -1)] + [0]
+    history = [-(i * step * dt_dataset) for i in range(N_h - 1, 0, -1)] + [0]
 
     # future frames: [dt, 2dt, ...]
-    chunk = [(i * dt) for i in range(N_c)]
+    chunk   = [(i * step * dt_dataset) for i in range(N_c)]
 
-    delta_timestamps = {
-        "observation.image": history,
-        "observation.state": history,
-        "action": chunk,
-    }
+    # create dict
+    delta_timestamps = {}
+
+    # camera obs
+    for cam in visual_obs_names:
+        delta_timestamps[cam] = history
+
+    # proprio obs
+    delta_timestamps["observation.state"] = history
+    
+    # actions
+    delta_timestamps["action"] = chunk
 
     return delta_timestamps

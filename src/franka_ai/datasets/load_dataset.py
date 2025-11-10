@@ -1,5 +1,5 @@
 from torch.utils.data import Dataset, DataLoader, random_split
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 from lerobot.common.datasets.utils import dataset_to_policy_features
 from lerobot.configs.types import FeatureType
 from pprint import pprint
@@ -14,7 +14,8 @@ from franka_ai.utils.seed_everything import make_worker_init_fn
 # TODO:  
 # 1) capire dove mettere transf per abs/rel poses + orientations
 # 2) nel training vengono normalizzate features, dove/chi calcola mean/std per ogni feature?
-
+# 3) come rimuovere depth camera dal batch, e da policy? per ora carica tutto
+# 3) e se voglio aggiungere/modificare new features (es usare axis angles isntead of quaternions?)
 
 
 class TransformedDataset(Dataset):
@@ -40,7 +41,9 @@ class TransformedDataset(Dataset):
     
 
 def make_dataloader(
-    repo_id="lerobot/pusht", 
+    repo_id=None, 
+    local_root=None, 
+    visual_obs_names=None,
     device=torch.device("cpu"),
     batch_size=32,
     shuffle=True,
@@ -49,8 +52,7 @@ def make_dataloader(
     seed_val=None, 
     N_history=16,  
     N_chunk=8, 
-    fps=10, 
-    local_root=None, 
+    fps_sampling=None, 
     print_ds_info=False 
 ):
     
@@ -65,7 +67,9 @@ def make_dataloader(
     - Creating optimized DataLoaders for training
 
     Args:
-        repo_id: Hugging Face repo ID or dataset folder name
+        repo_id: Hugging Face repo ID
+        local_root: local dataset root directory
+        visual_obs_names: names of the visual observations
         device: CPU or GPU
         batch_size: number of samples per batch
         shuffle: whether to shuffle the dataset
@@ -74,23 +78,24 @@ def make_dataloader(
         seed_val: base seed for reproducibility
         N_history: number of past frames (including current)
         N_chunk: number of future action frames
-        fps: dataset frame rate (Hz)
-        local_root: local dataset root directory
+        fps: desired dataset frame rate to build delta_timestamps (Hz)
         print_ds_info: print dataset statistics
 
     Returns:
         (DataLoader, DataLoader): train and validation dataloaders
     """
 
-    # Build the delta_timestamps dict for LeRobotDataset history and future
-    delta_timestamps = build_delta_timestamps(fps, N_history, N_chunk)
+    # Get dataset metadata
+    dataset_meta = LeRobotDatasetMetadata(repo_id=repo_id, root=local_root)
+
+    # Build the delta_timestamps dict for LeRobotDataset history and future        
+    delta_timestamps = build_delta_timestamps(dataset_meta.fps, fps_sampling, N_history, N_chunk, visual_obs_names)
 
     # Load the raw dataset (hub or local)
     dataset = LeRobotDataset(
         repo_id=repo_id,
         delta_timestamps=delta_timestamps,
-        root=local_root,
-        # video_backend="pyav",   
+        root=local_root,   
     )
 
     # print stats
@@ -122,8 +127,8 @@ def make_dataloader(
     print("Total number of frames in the validation dataset: : ", num_val)
 
     # Get transformation pipeline (augmentations, normalization, etc.)
-    train_tf = CustomTransforms(train=True)
-    val_tf = CustomTransforms(train=False)
+    train_tf = CustomTransforms(visual_obs_names, train=True)
+    val_tf = CustomTransforms(visual_obs_names, train=True)
     
     # Apply transforms
     transformed_train_ds = TransformedDataset(train_ds, train_tf)
