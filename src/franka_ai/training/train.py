@@ -16,7 +16,7 @@ from torch.nn.utils import clip_grad_norm_
 from torch.utils.tensorboard import SummaryWriter
 
 from franka_ai.utils.seed_everything import seed_everything
-from franka_ai.datasets.load_dataset import make_dataloader
+from franka_ai.dataset.load_dataset import make_dataloader
 from franka_ai.training.utils import setup_folders, update_best_model_symlink
 
 # Set reproducibility
@@ -55,7 +55,7 @@ def train(pretrained_path = None, learning_rate = 1e-4):
         csv_writer.writerow(["step", "train_loss", "val_loss"])
 
     # Get parameters
-    root_dataset_path = "/home/leonardo/Documents/Coding/franka_AI/data/test1"
+    root_dataset_path = os.path.join(os.getcwd(), "data/test1")
     repo_id=None # "lerobot/pusht" # dataset folder name # magari preso in input da utente questo percorso? 
     # pretrained_path = None
     device = torch.device("cuda") # select your device
@@ -74,6 +74,8 @@ def train(pretrained_path = None, learning_rate = 1e-4):
     features = dataset_to_policy_features(dataset_metadata.features)
     output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
     input_features = {key: ft for key, ft in features.items() if key not in output_features and key != 'observation.images.gripper_camera_depth'}
+
+    print("NEW input_features: ", input_features)
 
     # Policies are initialized with a configuration class, in this case `DiffusionConfig`. 
     cfg = DiffusionConfig(input_features=input_features, output_features=output_features)

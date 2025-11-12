@@ -1,0 +1,61 @@
+dataloader:
+  N_history: 16  
+  N_chunk: 8
+  batch_size: 16
+  shuffle: True
+  train_split: 0.8
+  fps_sampling: 10
+  num_workers: 4
+  prefetch_factor: 2
+  device: "cuda"
+  seed_val: -1 # -1 means no fixed seed
+  print_ds_info: False 
+
+dataset:
+  features:
+    VISUAL:
+      - observation.images.front_cam1
+      - observation.images.front_cam2
+      - observation.images.front_cam3
+      - observation.images.gripper_camera
+    STATE:
+      - observation.state
+    ACTION:
+      - action
+  state_slices:
+    q: [0, 7]
+    qdot: [7, 14]
+    tau: [14, 21]
+    gripper: [21, 22]
+    ext_force: [22,28]
+    ee_pos: [28, 31]
+    ee_quaternion: [31, 35]
+    
+
+transformations:
+  img_resize: 224
+  
+  noise_std_dev:
+    joint_pos: 0.002        # σ ≈ 0.002–0.01 rad (≈ 0.1°–0.6°)
+    joint_vel: 0.002        # σ ≈ 0.02 rad/s
+    joint_torque: 0.002     # σ ≈ 0.02 Nm
+    cart_position: 0.002    # σ ≈ 0.5–2 mm
+    cart_orientation: 0.002 # σ ≈ 0.5–2° (axis-angle)
+  
+  augmentations:
+    color_jitter:
+      brightness: 0.3
+      contrast: 0.3
+      saturation: 0.3
+      hue: 0.05
+      p: 1.0
+    gaussian_blur:
+      kernel_size: [3, 3]
+      sigma: [0.1, 2.0]
+      p: 0.3
+    random_affine:
+      degrees: 5
+      translate: [0.05, 0.05]
+      p: 0.5
+
+

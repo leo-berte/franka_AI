@@ -5,17 +5,12 @@ from lerobot.configs.types import FeatureType
 from pprint import pprint
 import torch
 
-from franka_ai.datasets.transforms import CustomTransforms
-from franka_ai.datasets.utils import build_delta_timestamps
+from franka_ai.dataset.transforms import CustomTransforms
+from franka_ai.dataset.utils import build_delta_timestamps
 from franka_ai.utils.seed_everything import make_worker_init_fn
 
 
 
-# TODO:  
-# 1) capire dove mettere transf per abs/rel poses + orientations
-# 2) nel training vengono normalizzate features, dove/chi calcola mean/std per ogni feature?
-# 3) come rimuovere depth camera dal batch, e da policy? per ora carica tutto
-# 3) e se voglio aggiungere/modificare new features (es usare axis angles isntead of quaternions?)
 
 
 class TransformedDataset(Dataset):
@@ -32,31 +27,47 @@ class TransformedDataset(Dataset):
         self.base = base_dataset
         self.custom_transforms = custom_transforms
 
+        # extract dataset features to be used
+        self.keep_features = []
+        for k in self.custom_transforms.feature_groups.keys():
+            for v in self.custom_transforms.feature_groups[k]:
+                self.keep_features.append(v)
+
     def __len__(self):
         return len(self.base)
 
     def __getitem__(self, idx):
+
+        # get sample
         sample = self.base[idx]
-        return self.custom_transforms.transform(sample)
-    
+
+        # apply transforms
+        sample = self.custom_transforms.transform(sample) 
+
+        # drop unwanted features
+        sample = {k: v for k, v in sample.items() if k in self.keep_features}
+
+        return sample
+
+
+
+
+
 
 def make_dataloader(
     repo_id=None, 
     local_root=None, 
-    visual_obs_names=None,
-    device=torch.device("cpu"),
-    batch_size=32,
-    shuffle=True,
-    train_split=0.8, 
-    num_workers=4, 
-    seed_val=None, 
-    N_history=16,  
-    N_chunk=8, 
-    fps_sampling=None, 
-    print_ds_info=False 
+    dataloader_cfg=None,
+    feature_groups=None,
+    transforms_train=None,
+    transforms_val=None,
+    **overrides
 ):
     
     """
+    
+    TO UPDATE
+    
     Build PyTorch DataLoaders for training and validation from a LeRobot dataset.
 
     Handles:
@@ -85,17 +96,33 @@ def make_dataloader(
         (DataLoader, DataLoader): train and validation dataloaders
     """
 
+    # Dataloader params (batch_size, seed_val, ..) passed via argument will override yaml
+    dl_cfg = {**(dataloader_cfg or {}), **overrides}
+
+    # Extract parameters
+    N_history       = dl_cfg["N_history"]
+    N_chunk         = dl_cfg["N_chunk"]
+    batch_size      = dl_cfg["batch_size"]
+    shuffle         = dl_cfg["shuffle"]
+    train_split     = dl_cfg["train_split"]
+    fps_sampling    = dl_cfg["fps_sampling"]
+    num_workers     = dl_cfg["num_workers"]
+    prefetch_factor = dl_cfg["prefetch_factor"]
+    seed_val        = dl_cfg["seed_val"]
+    print_ds_info   = dl_cfg["print_ds_info"]
+    device          = torch.device(dl_cfg["device"])
+
     # Get dataset metadata
     dataset_meta = LeRobotDatasetMetadata(repo_id=repo_id, root=local_root)
 
     # Build the delta_timestamps dict for LeRobotDataset history and future        
-    delta_timestamps = build_delta_timestamps(dataset_meta.fps, fps_sampling, N_history, N_chunk, visual_obs_names)
+    delta_timestamps = build_delta_timestamps(dataset_meta.fps, fps_sampling, N_history, N_chunk, feature_groups)
 
     # Load the raw dataset (hub or local)
     dataset = LeRobotDataset(
         repo_id=repo_id,
-        delta_timestamps=delta_timestamps,
         root=local_root,   
+        delta_timestamps=delta_timestamps,
     )
 
     # print stats
@@ -112,27 +139,25 @@ def make_dataloader(
         print("Input features: \n", input_features)
 
     # fix seed for reproducibility
-    if seed_val:
+    if seed_val is not None and seed_val >= 0:
         worker_fn = make_worker_init_fn(seed_val)
+        g = torch.Generator().manual_seed(seed_val)
     else:
         worker_fn = None   
+        g = None
 
     # Random split between training and validation
     num_items = len(dataset)
     print("Total number of frames in the dataset: ", num_items)
     num_train = int(num_items * train_split)
     num_val = num_items - num_train
-    train_ds, val_ds = random_split(dataset, [num_train, num_val], generator=torch.Generator())
+    train_ds, val_ds = random_split(dataset, [num_train, num_val], generator=g)
     print("Total number of frames in the training dataset: ", num_train)
     print("Total number of frames in the validation dataset: : ", num_val)
-
-    # Get transformation pipeline (augmentations, normalization, etc.)
-    train_tf = CustomTransforms(visual_obs_names, train=True)
-    val_tf = CustomTransforms(visual_obs_names, train=True)
     
     # Apply transforms
-    transformed_train_ds = TransformedDataset(train_ds, train_tf)
-    transformed_val_ds = TransformedDataset(val_ds, val_tf)
+    transformed_train_ds = TransformedDataset(train_ds, transforms_train)
+    transformed_val_ds = TransformedDataset(val_ds, transforms_val)
 
     # Wrap in DataLoaders
 
@@ -142,7 +167,7 @@ def make_dataloader(
         shuffle=shuffle,
         num_workers=num_workers, # number of CPU processes that load data in parallel
         pin_memory=device.type!="cpu", # allocate CPU memory as pinned for faster CPU to GPU transfers
-        prefetch_factor=2, # each worker preloads 2 batches ahead
+        prefetch_factor=prefetch_factor, # each worker preloads 2 batches ahead
         persistent_workers=True, # keep workers alive between epochs 
         worker_init_fn=worker_fn, # ensures each worker has a reproducible deterministic seed
         drop_last=True # if the total number of samples is not divisible by batch_size, the last incomplete batch is dropped
@@ -154,11 +179,10 @@ def make_dataloader(
         shuffle=shuffle,
         num_workers=num_workers,
         pin_memory=device.type!="cpu",
-        prefetch_factor=2,
+        prefetch_factor=prefetch_factor,
         persistent_workers=True,
         worker_init_fn=worker_fn,
-        drop_last=True
-                        
+        drop_last=True            
     )
 
     return train_loader, val_loader
