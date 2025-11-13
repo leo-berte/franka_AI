@@ -6,13 +6,11 @@ import torch
 
 # TODO: 
 # 1) Check values resize, bright, ..
-# 2) normalization of features HERE?
-# 3) gripper continuous2dicsrete conversion (check 0 o 1 values)
-# 4) orientation conversions + for quaternions, nel dataset in che orgine sono i 4 numerini?
-# 5) relative vs absolute cart pose
+# 2) gripper continuous2dicsrete conversion (check 0 o 1 values)
+# 3) normalize and unnormalize of features HERE?
+# 4) method in/out features to feed policy with statistics
+# 5) add relative vs absolute cart pose as actions/state
 
-# -- panda_gripper/gripper_command: it's our action, an it will be a discrete value (0.0 or 1.0) --> check type
-# -- panda_gripper/width: it's our observation, an it will be a continuous value between 0.0 and 1.0 --> check type
 
 
 class CustomTransforms():
@@ -57,7 +55,7 @@ class CustomTransforms():
         
         # convert img to [0,1] + resize (both training and inference)
         base_tf_pre = torch.nn.Sequential(
-            K.Resize((self.img_resize, self.img_resize)),
+            K.Resize(tuple(self.img_resize)),
             K.Normalize(mean=torch.tensor([0.0, 0.0, 0.0]),
                         std=torch.tensor([255.0, 255.0, 255.0]))
         )
@@ -114,21 +112,18 @@ class CustomTransforms():
     def curr_cart_orientation_transforms(self, v):
         pass
 
-    def gripper_continuous2discrete(self, value, threshold=0.5):
-        return (value > threshold).float() # returns 0 (closed) or 1 (open)
+    def gripper_continuous2discrete(self, value, gripper_half_width=0.037):
+        return (value > gripper_half_width).float() # returns 0 (closed) or 1 (open)
 
     def quaternion2axis_angle(self, q):
     
         """
         Convert quaternion(s) to axis-angle representation using SciPy.
-        q: (..., 4) tensor with format (w, x, y, z)
+        q: (..., 4) tensor with format (x, y, z, w)
         returns: (..., 3) tensor with axis-angle representation
         """
 
         q_np = q.detach().cpu().numpy()
-        # reorder from (w, x, y, z) → (x, y, z, w) as expected by SciPy
-        q_np = q_np[..., [1, 2, 3, 0]]
-
         r = R.from_quat(q_np)
         aa = r.as_rotvec()  # returns axis * angle, shape (..., 3)
         return torch.from_numpy(aa).to(q.device, dtype=q.dtype)
@@ -144,7 +139,6 @@ class CustomTransforms():
         aa_np = axis_angle.detach().cpu().numpy()
         r = R.from_rotvec(aa_np)
         q_np = r.as_quat()  # returns (x, y, z, w)
-        q_np = q_np[..., [3, 0, 1, 2]]  # reorder to (w, x, y, z)
         return torch.from_numpy(q_np).to(axis_angle.device, dtype=axis_angle.dtype)
 
     def transform(self, sample):
@@ -161,24 +155,25 @@ class CustomTransforms():
                 
                 v = v.to(torch.float32) # convert data to tensor float32
 
-                gripper_cont = v[..., self.state_slices["gripper"]]
-                gripper_disc = self.gripper_continuous2discrete(gripper_cont)
-                
-                q_orientation = v[..., self.state_slices["ee_quaternion"]]
-                aa_orientation = self.quaternion2axis_angle(q_orientation)
-
-                joint_pose = v[..., self.state_slices["q"]]
-                joint_pos_aug = self.joint_pos_transforms(joint_pose) if self.train else joint_pose
-
+                # add noise on joint velocities
                 joint_vel = v[..., self.state_slices["qdot"]]
                 joint_vel_aug = self.joint_vel_transforms(joint_vel) if self.train else joint_vel
 
+                # add noise on joint torques
                 joint_torque = v[..., self.state_slices["tau"]]
                 joint_torque_aug = self.joint_torque_transforms(joint_torque) if self.train else joint_torque
 
+                # convert to discrete gripper state (0.0 or 1.0)
+                gripper_cont = v[..., self.state_slices["gripper"]]
+                gripper_disc = self.gripper_continuous2discrete(gripper_cont)
+                
+                # convert orientation to axis-angle
+                q_orientation = v[..., self.state_slices["ee_quaternion"]]
+                aa_orientation = self.quaternion2axis_angle(q_orientation)
+
                 # rebuild state vector
                 v_new = torch.cat([
-                    joint_pos_aug,
+                    v[..., self.state_slices["q"]],
                     joint_vel_aug,
                     joint_torque_aug,
                     gripper_disc,

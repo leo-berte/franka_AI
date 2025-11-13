@@ -10,9 +10,6 @@ from franka_ai.dataset.utils import build_delta_timestamps
 from franka_ai.utils.seed_everything import make_worker_init_fn
 
 
-
-
-
 class TransformedDataset(Dataset):
     
     """
@@ -24,6 +21,8 @@ class TransformedDataset(Dataset):
     """
 
     def __init__(self, base_dataset, custom_transforms):
+        
+        # init
         self.base = base_dataset
         self.custom_transforms = custom_transforms
 
@@ -48,10 +47,6 @@ class TransformedDataset(Dataset):
         sample = {k: v for k, v in sample.items() if k in self.keep_features}
 
         return sample
-
-
-
-
 
 
 def make_dataloader(
@@ -130,8 +125,8 @@ def make_dataloader(
         print(f"Number of episodes selected: {dataset.num_episodes}")
         print(f"Number of fps: {dataset.fps}")
         print(f"Camera keys: {dataset.meta.camera_keys}")
-        print("Features:")
-        pprint(dataset.features)
+        # print("Features:")
+        # pprint(dataset.features)
         features = dataset_to_policy_features(dataset.features)
         output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
         input_features = {key: ft for key, ft in features.items() if key not in output_features}

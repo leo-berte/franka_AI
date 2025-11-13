@@ -6,7 +6,7 @@ import torch
 import csv
 import os
 
-from lerobot.configs.types import FeatureType
+from lerobot.configs.types import FeatureType, NormalizationMode
 from lerobot.common.datasets.lerobot_dataset import LeRobotDatasetMetadata
 from lerobot.common.datasets.utils import dataset_to_policy_features
 from lerobot.common.policies.diffusion.configuration_diffusion import DiffusionConfig
@@ -17,12 +17,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 from franka_ai.utils.seed_everything import seed_everything
 from franka_ai.dataset.load_dataset import make_dataloader
-from franka_ai.training.utils import setup_folders, update_best_model_symlink
-
-# Set reproducibility
-SEED = 40
-seed_everything(SEED)
-
+from franka_ai.dataset.transforms import CustomTransforms
+from franka_ai.dataset.utils import get_configs_dataset, get_dataset_path
+from franka_ai.training.utils import setup_folders, update_best_model_symlink, dataset_to_policy_features_patch, compute_dataset_stats_patch
 
 """
 Run the code: python src/franka_ai/training/train.py
@@ -31,7 +28,7 @@ Activate tensorboard: (from where there is this code): python -m tensorboard.mai
 
 
 # TODO:
-# 1) params da config file oppure da argparser? ne basta uno dei due?
+# 1) params da config file oppure da argparser? ne basta uno dei due? --> checkpoint dir e dataset dir e modello da argparser
 # 2) optimize training (see notes)
 
 
@@ -69,16 +66,74 @@ def train(pretrained_path = None, learning_rate = 1e-4):
     assert save_ckpt_freq % eval_freq == 0 and save_ckpt_freq >= eval_freq, "save_ckpt_freq must be >= eval_freq and a multiple of it"
     assert training_steps % save_ckpt_freq == 0, "training_steps must be a multiple of save_ckpt_freq to ensure final evaluation alignment"
 
+
+
+
+    # ISTRUZIONE RIPETUTA ANCHE NEL MAKE LOADER, DA CAPIRE
+    # Get path to dataset (via argparser)
+    local_root = get_dataset_path()
+
+    # ISTRUZIONE RIPETUTA ANCHE NEL MAKE LOADER, DA CAPIRE
+    # Get configs about dataloader and dataset 
+    dataloader_cfg, dataset_cfg, transformations_cfg = get_configs_dataset("configs/dataset.yaml")
+    
+
+    # Eventually freeze seed for reproducibility
+    seed_val = dataloader_cfg["seed_val"]
+    if seed_val is not None and seed_val >= 0:
+        seed_everything(seed_val)
+
+    # Prepare transforms for training
+    transforms_train = CustomTransforms(
+        dataset_cfg=dataset_cfg,
+        transformations_cfg=transformations_cfg,
+        train=True
+    )
+
+    # Prepare transforms for inference
+    transforms_val = CustomTransforms(
+        dataset_cfg=dataset_cfg,
+        transformations_cfg=transformations_cfg,
+        train=False
+    )
+
+    # Create loaders
+    train_loader, val_loader = make_dataloader(
+        local_root=local_root,
+        dataloader_cfg=dataloader_cfg,
+        feature_groups=dataset_cfg["features"],
+        transforms_train=transforms_train,
+        transforms_val=transforms_val
+    )
+
+
+
+
     # Get dataset input/output stats
     dataset_metadata = LeRobotDatasetMetadata(repo_id=repo_id, root=root_dataset_path)
     features = dataset_to_policy_features(dataset_metadata.features)
     output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
-    input_features = {key: ft for key, ft in features.items() if key not in output_features and key != 'observation.images.gripper_camera_depth'}
+    input_features = {key: ft for key, ft in features.items() if key not in output_features}
+    print("Original input_features: ", input_features)
 
-    print("NEW input_features: ", input_features)
+
+    # Get dataset input/output stats
+    batch = next(iter(train_loader))
+    features = dataset_to_policy_features_patch(batch, dataset_cfg["features"])
+    output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
+    input_features = {key: ft for key, ft in features.items() if ft.type is not FeatureType.ACTION}
+    print("New input_features: ", input_features)
+
+    # skip normalize/unnormalize
+    normalization_mapping = {
+        "VISUAL": NormalizationMode.IDENTITY,
+        "STATE": NormalizationMode.IDENTITY,
+        "ACTION": NormalizationMode.IDENTITY,
+    }
+    
 
     # Policies are initialized with a configuration class, in this case `DiffusionConfig`. 
-    cfg = DiffusionConfig(input_features=input_features, output_features=output_features)
+    cfg = DiffusionConfig(input_features=input_features, output_features=output_features, normalization_mapping=normalization_mapping)
 
     # -------------------
     # POLICY INITIALIZATION
@@ -86,6 +141,9 @@ def train(pretrained_path = None, learning_rate = 1e-4):
 
     if pretrained_path is None:
         # From scratch
+        new_dataset_stats = compute_dataset_stats_patch(val_loader, dataset_cfg["features"])
+        print(new_dataset_stats)
+        # policy = DiffusionPolicy(cfg, dataset_stats=new_dataset_stats)
         policy = DiffusionPolicy(cfg, dataset_stats=dataset_metadata.stats)
     else:
         # Load from checkpoint
@@ -95,19 +153,6 @@ def train(pretrained_path = None, learning_rate = 1e-4):
     # Set training mode
     policy.train() # during training layers like Dropout or BatchNorm are ON 
     policy.to(device)
-
-    # Dataloader
-    train_loader, val_loader = make_dataloader(
-        local_root=root_dataset_path,
-        visual_obs_names=['observation.images.front_cam1', 'observation.images.front_cam2', 'observation.images.front_cam3', 'observation.images.gripper_camera'],
-        device=device,
-        seed_val=SEED,
-        batch_size=16,
-        N_history=2, 
-        N_chunk=16,
-        fps_sampling=10,
-        print_ds_info=True
-    )
 
     # Then we create our optimizer and dataloader for offline training.
     optimizer = torch.optim.Adam(policy.parameters(), lr=learning_rate) 

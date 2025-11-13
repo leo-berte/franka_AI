@@ -1,6 +1,6 @@
 dataloader:
-  N_history: 16  
-  N_chunk: 8
+  N_history: 10  
+  N_chunk: 10
   batch_size: 16
   shuffle: True
   train_split: 0.8
@@ -9,7 +9,7 @@ dataloader:
   prefetch_factor: 2
   device: "cuda"
   seed_val: -1 # -1 means no fixed seed
-  print_ds_info: False 
+  print_ds_info: True 
 
 dataset:
   features:
@@ -33,7 +33,7 @@ dataset:
     
 
 transformations:
-  img_resize: 224
+  img_resize: [224, 224]
   
   noise_std_dev:
     joint_pos: 0.002        # σ ≈ 0.002–0.01 rad (≈ 0.1°–0.6°)

@@ -52,9 +52,11 @@ def main():
                 print(k, type(v))
 
         # print data
-        print(f"{batch['observation.images.front_cam1'].shape=}")  # (32, N_h, c, h, w)
-        print(f"{batch['observation.state'].shape=}")  # (32, N_h, 14)
-        print(f"{batch['action'].shape=}")  # (32, N_c, 14)
+        print(f"{batch['observation.images.front_cam1'].shape=}")  # (B, N_h, c, h, w)
+        print(f"{batch['observation.state'].shape=}")  # (B, N_h, n_state)
+        print(f"{batch['observation.state'][0,0,:]}")  # (_, _, n_state)
+        print(f"{batch['action'].shape=}")  # (B, N_c, n_actions)
+        print(f"{batch['action'][0,0,:]}")  # (_, _, n_actions)
         break
 
 
