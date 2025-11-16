@@ -1,14 +1,22 @@
+import collections
 import argparse
 import torch
+import time
 import os
 
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.load_dataset import make_dataloader
-from franka_ai.dataset.utils import get_configs_dataset, get_dataset_path
+from franka_ai.dataset.utils import get_configs_dataset, get_dataset_path, benchmark_loader, benchmark_loader2
 
 """
 Run the code: python src/franka_ai/dataset/main.py --abs_path /home/leonardo/Documents/Coding/franka_AI/data/test1
 """
+
+
+
+# TODO: 
+# 1) dataloader profiler based on transforms ON/OFF and dataloader params
+
 
 def main():
 
@@ -32,14 +40,27 @@ def main():
         train=False
     )
 
+    # Prepare transforms for computing dataset statistics only
+    transforms_stats = CustomTransforms(
+        dataset_cfg=dataset_cfg,
+        transformations_cfg=transformations_cfg,
+        train=False
+    )
+
+
     # Create loaders
-    train_loader, val_loader = make_dataloader(
+    train_loader, val_loader, stats_loader = make_dataloader(
         local_root=local_root,
         dataloader_cfg=dataloader_cfg,
         feature_groups=dataset_cfg["features"],
         transforms_train=transforms_train,
-        transforms_val=transforms_val
+        transforms_val=transforms_val,
+        transforms_stats=transforms_stats
     )
+
+    # benchmark dataloader
+    benchmark_loader(train_loader)
+    benchmark_loader2(train_loader)
 
     # iterate over dataloader
     for batch in train_loader:
@@ -58,8 +79,6 @@ def main():
         print(f"{batch['action'].shape=}")  # (B, N_c, n_actions)
         print(f"{batch['action'][0,0,:]}")  # (_, _, n_actions)
         break
-
-
 
 
 if __name__ == "__main__":

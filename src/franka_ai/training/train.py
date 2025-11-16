@@ -97,41 +97,43 @@ def train(pretrained_path = None, learning_rate = 1e-4):
         train=False
     )
 
+    # Prepare transforms for computing dataset statistics only
+    transforms_stats = CustomTransforms(
+        dataset_cfg=dataset_cfg,
+        transformations_cfg=transformations_cfg,
+        train=False
+    )
+
+
     # Create loaders
-    train_loader, val_loader = make_dataloader(
+    train_loader, val_loader, stats_loader = make_dataloader(
         local_root=local_root,
         dataloader_cfg=dataloader_cfg,
         feature_groups=dataset_cfg["features"],
         transforms_train=transforms_train,
-        transforms_val=transforms_val
+        transforms_val=transforms_val,
+        transforms_stats=transforms_stats
     )
 
-
-
-
     # Get dataset input/output stats
-    dataset_metadata = LeRobotDatasetMetadata(repo_id=repo_id, root=root_dataset_path)
-    features = dataset_to_policy_features(dataset_metadata.features)
-    output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
-    input_features = {key: ft for key, ft in features.items() if key not in output_features}
-    print("Original input_features: ", input_features)
-
-
-    # Get dataset input/output stats
-    batch = next(iter(train_loader))
-    features = dataset_to_policy_features_patch(batch, dataset_cfg["features"])
+    features = dataset_to_policy_features_patch(train_loader, dataset_cfg["features"])
     output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
     input_features = {key: ft for key, ft in features.items() if ft.type is not FeatureType.ACTION}
     print("New input_features: ", input_features)
 
-    # skip normalize/unnormalize
+    # # skip normalize/unnormalize
+    # normalization_mapping = {
+    #     "VISUAL": NormalizationMode.IDENTITY,
+    #     "STATE": NormalizationMode.IDENTITY,
+    #     "ACTION": NormalizationMode.IDENTITY,
+    # }
+    
     normalization_mapping = {
-        "VISUAL": NormalizationMode.IDENTITY,
-        "STATE": NormalizationMode.IDENTITY,
-        "ACTION": NormalizationMode.IDENTITY,
+    "VISUAL": NormalizationMode.MEAN_STD,
+    "STATE": NormalizationMode.MEAN_STD,
+    "ACTION": NormalizationMode.MIN_MAX,
     }
     
-
     # Policies are initialized with a configuration class, in this case `DiffusionConfig`. 
     cfg = DiffusionConfig(input_features=input_features, output_features=output_features, normalization_mapping=normalization_mapping)
 
@@ -141,10 +143,8 @@ def train(pretrained_path = None, learning_rate = 1e-4):
 
     if pretrained_path is None:
         # From scratch
-        new_dataset_stats = compute_dataset_stats_patch(val_loader, dataset_cfg["features"])
-        print(new_dataset_stats)
-        # policy = DiffusionPolicy(cfg, dataset_stats=new_dataset_stats)
-        policy = DiffusionPolicy(cfg, dataset_stats=dataset_metadata.stats)
+        new_dataset_stats = compute_dataset_stats_patch(stats_loader, dataset_cfg["features"])
+        policy = DiffusionPolicy(cfg, dataset_stats=new_dataset_stats)
     else:
         # Load from checkpoint
         policy = DiffusionPolicy.from_pretrained(pretrained_path)

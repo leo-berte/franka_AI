@@ -2,15 +2,16 @@ from scipy.spatial.transform import Rotation as R
 import kornia.augmentation as K
 import torchvision.transforms as T
 import torch
-
+import numpy as np
 
 # TODO: 
 # 1) Check values resize, bright, ..
 # 2) gripper continuous2dicsrete conversion (check 0 o 1 values)
-# 3) normalize and unnormalize of features HERE?
-# 4) method in/out features to feed policy with statistics
+# 3) normalize and unnormalize capire come vengono fatti da lerobot (soprattutto per immagini)
 # 5) add relative vs absolute cart pose as actions/state
-
+# 6) bring kornia on GPU? Ma ha senso spostare i dati già su GPU qui? non fare lavoro doppio
+# 7) capire random_split se mi mischia episodi/frames tra train/val dataset
+# capire cosa accade con N_hist, N_chunk = 0, 1
 
 
 class CustomTransforms():
@@ -56,15 +57,15 @@ class CustomTransforms():
         # convert img to [0,1] + resize (both training and inference)
         base_tf_pre = torch.nn.Sequential(
             K.Resize(tuple(self.img_resize)),
-            K.Normalize(mean=torch.tensor([0.0, 0.0, 0.0]),
-                        std=torch.tensor([255.0, 255.0, 255.0]))
+            # K.Normalize(mean=torch.tensor([0.0, 0.0, 0.0]),
+            #             std=torch.tensor([255.0, 255.0, 255.0]))
         )
 
-        # convert img to [-1,1] (both training and inference)
-        base_tf_post = torch.nn.Sequential(
-            K.Normalize(mean=torch.tensor([0.5, 0.5, 0.5]),
-                        std=torch.tensor([0.5, 0.5, 0.5]))
-        )
+        # # convert img to [-1,1] (both training and inference)
+        # base_tf_post = torch.nn.Sequential(
+        #     K.Normalize(mean=torch.tensor([0.5, 0.5, 0.5]),
+        #                 std=torch.tensor([0.5, 0.5, 0.5]))
+        # )
 
         # training image augmentations
         train_tf = torch.nn.Sequential(
@@ -91,8 +92,10 @@ class CustomTransforms():
         )
 
         # define full pipeline for both training and inference
-        self.img_tf_inference = torch.nn.Sequential(base_tf_pre, base_tf_post)
-        self.img_tf_train = torch.nn.Sequential(base_tf_pre, train_tf, base_tf_post)
+        # self.img_tf_inference = torch.nn.Sequential(base_tf_pre, base_tf_post)
+        # self.img_tf_train = torch.nn.Sequential(base_tf_pre, train_tf, base_tf_post)
+        self.img_tf_inference = torch.nn.Sequential(base_tf_pre)
+        self.img_tf_train = torch.nn.Sequential(base_tf_pre, train_tf)
 
     def joint_pos_transforms(self, v):
         noise = torch.randn_like(v[:1,:]) * self.joint_pos_std_dev # v: (N_h, D) (history) → noise: (1, D)
@@ -125,7 +128,7 @@ class CustomTransforms():
 
         q_np = q.detach().cpu().numpy()
         r = R.from_quat(q_np)
-        aa = r.as_rotvec()  # returns axis * angle, shape (..., 3)
+        aa = r.as_rotvec()  # returns axis * angle, shape (..., 3)   
         return torch.from_numpy(aa).to(q.device, dtype=q.dtype)
 
     def axis_angle2quaternion(self, axis_angle):
@@ -151,7 +154,7 @@ class CustomTransforms():
                 sample[k] = self.img_tf_train(v) if self.train else self.img_tf_inference(v)
 
             # state
-            elif k in self.feature_groups["STATE"]:
+            if k in self.feature_groups["STATE"]:
                 
                 v = v.to(torch.float32) # convert data to tensor float32
 

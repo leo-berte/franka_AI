@@ -1,9 +1,10 @@
 from torch.utils.data import Dataset, DataLoader, random_split
+from pprint import pprint
+import torch
+
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 from lerobot.common.datasets.utils import dataset_to_policy_features
 from lerobot.configs.types import FeatureType
-from pprint import pprint
-import torch
 
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.utils import build_delta_timestamps
@@ -56,6 +57,7 @@ def make_dataloader(
     feature_groups=None,
     transforms_train=None,
     transforms_val=None,
+    transforms_stats=None,
     **overrides
 ):
     
@@ -153,6 +155,7 @@ def make_dataloader(
     # Apply transforms
     transformed_train_ds = TransformedDataset(train_ds, transforms_train)
     transformed_val_ds = TransformedDataset(val_ds, transforms_val)
+    transformed_stats_ds = TransformedDataset(train_ds, transforms_stats)
 
     # Wrap in DataLoaders
 
@@ -180,7 +183,18 @@ def make_dataloader(
         drop_last=True            
     )
 
-    return train_loader, val_loader
+    stats_loader = DataLoader(
+        transformed_stats_ds,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=device.type!="cpu",
+        prefetch_factor=prefetch_factor,
+        persistent_workers=True,
+        worker_init_fn=worker_fn,
+        drop_last=True    
+    )
+
+    return train_loader, val_loader, stats_loader
 
 
 

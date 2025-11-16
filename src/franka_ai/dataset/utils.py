@@ -1,13 +1,14 @@
 import torchvision.transforms as T
 import argparse
 import torch
+import time
 import yaml
 import os
 
 
 # TODO: 
 # 1) Do I want images close to each others or far in time? And for proprioception?
-
+# 2) maybe f_sampling_history and f_sampling_chunk
   
 def build_delta_timestamps(fps_dataset, fps_sampling, N_h, N_c, feature_groups):
 
@@ -79,3 +80,36 @@ def get_configs_dataset(config_rel_path):
     transformations_cfg = cfg["transformations"]
 
     return dataloader_cfg, dataset_cfg, transformations_cfg
+
+def benchmark_loader(loader, num_batches=100):
+
+    it = iter(loader)
+    _ = next(it)  # warm-up workers
+
+    num_batches = min(num_batches, len(loader))
+
+    times = []
+    for _ in range(num_batches):
+        t0 = time.perf_counter()
+        batch = next(it)
+        times.append(time.perf_counter() - t0)
+
+    print(f"Time stats per-batch processing (n_batches={num_batches}):")
+    print("Avg:", sum(times)/len(times))
+    print("Min:", min(times))
+    print("Max:", max(times))
+
+def benchmark_loader2(loader):
+
+    # Warm-up workers
+    _ = next(iter(loader))
+
+    # Start timing
+    start = time.perf_counter()
+    for batch in loader:
+        pass
+    elapsed = time.perf_counter() - start
+
+    num_batches = len(loader)
+    print(f"Time stats per-batch processing (n_batches={num_batches}):")
+    print(f"Avg time per batch: {elapsed / num_batches:.4f}s")
