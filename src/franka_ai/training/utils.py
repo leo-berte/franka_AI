@@ -59,6 +59,10 @@ def dataset_to_policy_features_patch(dataloader, features):
     policy_features = {}
 
     for ft_type, ft_list in features.items():
+        
+        # skip REMOVE features
+        if ft_type == "REMOVE":
+            continue
 
         for ft in ft_list:
             
@@ -68,9 +72,9 @@ def dataset_to_policy_features_patch(dataloader, features):
             # get full shape
             shape = tuple(v.shape) 
             
-            if FeatureType[ft_type] == FeatureType.VISUAL:
+            if ft_type == "VISUAL":
                 shape = shape[-3:]
-            elif FeatureType[ft_type] in [FeatureType.STATE, FeatureType.ACTION]:
+            elif ft_type in ["STATE", "ACTION"]:
                 shape = shape[-1:]
             
             # compose policy feature
@@ -80,7 +84,7 @@ def dataset_to_policy_features_patch(dataloader, features):
 
 def compute_dataset_stats_patch(dataloader, feature_groups):
 
-    print("Computing dataset statistics...")
+    print("\nComputing dataset statistics...")
 
     mins = {}
     maxs = {}
@@ -91,10 +95,16 @@ def compute_dataset_stats_patch(dataloader, feature_groups):
 
     # extract first batch to infer feature shapes
     first_batch = next(iter(dataloader))
-    keys = list(first_batch.keys())
+
+    # select features to be used to compute statistics
+    keep_keys = []
+    for ft_type, ft_list in feature_groups.items():
+        for ft in ft_list:
+            if (ft_type != "REMOVE"):
+                keep_keys.append(ft)
 
     # initialize accumulators
-    for k in keys:
+    for k in keep_keys:
         
         # get features for a given key and collapse batch + history
         x = first_batch[k].detach().cpu().float()
@@ -117,7 +127,7 @@ def compute_dataset_stats_patch(dataloader, feature_groups):
     # Scan entire dataset
     for batch in dataloader:
 
-        for k in keys:
+        for k in keep_keys:
 
             # get features for a given key and collapse batch + history
             x = batch[k].detach().cpu().float()   # (B, N_h, ...)
@@ -159,7 +169,7 @@ def compute_dataset_stats_patch(dataloader, feature_groups):
             counts[k] += batch_count
 
     # Finalize statistics
-    for k in keys:
+    for k in keep_keys:
 
         total = counts[k]
         mean = sums[k] / total
@@ -180,6 +190,8 @@ def compute_dataset_stats_patch(dataloader, feature_groups):
             "std": std,
         }
 
-    print("Finished computing dataset statistics!")
+    print("Finished computing dataset statistics!\n")
+
+    print(stats)
     
     return stats

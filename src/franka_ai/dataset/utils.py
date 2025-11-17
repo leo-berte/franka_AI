@@ -5,33 +5,43 @@ import time
 import yaml
 import os
 
+from lerobot.common.datasets.utils import dataset_to_policy_features
+from lerobot.configs.types import FeatureType
 
 # TODO: 
-# 1) Do I want images close to each others or far in time? And for proprioception?
-# 2) maybe f_sampling_history and f_sampling_chunk
+# 1) Do I want images close to each others or far in time? 
   
-def build_delta_timestamps(fps_dataset, fps_sampling, N_h, N_c, feature_groups):
+
+def build_delta_timestamps(feature_groups, N_h, N_c, fps_dataset, fps_sampling_hist=10, fps_sampling_chunk=10):
 
     """
     Build the delta_timestamps dict for LeRobotDataset history and future.
 
     Args:
-        fps_dataset: dataset original frame rate (frames per second).
-        fps_sampling: frame rate used to import the dataset (frames per second).
+        feature_groups: feature names used in the dataset.
         N_h: number of history frames (including current).
         N_c: number of future action frames (including current).
-        feature_groups: feature names used in the dataset.
+        fps_dataset: dataset original frame rate (frames per second).
+        fps_sampling_hist: frame rate used to import history data (frames per second).
+        fps_sampling_chunk: frame rate used to import chunk data (frames per second).
     """
+
+    # consistency checks
+    if N_h < 1:
+        raise ValueError("N_history must be ≥ 1")
+    if N_c < 1:
+        raise ValueError("N_chunk must be ≥ 1")
 
     # adjust fps_dataset to fps_sampling
     dt_dataset = 1 / fps_dataset
-    step = round(fps_dataset / fps_sampling) if fps_sampling else 1
+    step_hist = round(fps_dataset / fps_sampling_hist)
+    step_chunk = round(fps_dataset / fps_sampling_chunk)
 
-    # history frames: [-2dt, -dt, ..., 0]
-    history = [-(i * step * dt_dataset) for i in range(N_h - 1, 0, -1)] + [0]
+    # history frames: [..., -2dt, -dt, 0]
+    history = [-(i * step_hist * dt_dataset) for i in range(N_h-1, -1, -1)]
 
     # future frames: [dt, 2dt, ...]
-    chunk   = [(i * step * dt_dataset) for i in range(N_c)]
+    chunk   = [(i * step_chunk * dt_dataset) for i in range(1, N_c+1)]
 
     # create dict
     delta_timestamps = {}
@@ -46,7 +56,7 @@ def build_delta_timestamps(fps_dataset, fps_sampling, N_h, N_c, feature_groups):
 
     # actions
     for a in feature_groups["ACTION"]:
-        delta_timestamps[a] = chunk
+        delta_timestamps[a] = history + chunk
 
     return delta_timestamps
 
@@ -81,17 +91,37 @@ def get_configs_dataset(config_rel_path):
 
     return dataloader_cfg, dataset_cfg, transformations_cfg
 
+def print_dataset_info(ds, ds_type):
+    
+    print("\n")
+    print(f"Info about {ds_type}:")
+    print(f"Number of total frames: {ds.meta.total_frames}")
+    print(f"Number of selected frames: {ds.num_frames}")
+    print(f"Number of total episodes: {ds.meta.total_episodes}")
+    print(f"Number of selected episodes: {ds.num_episodes}")
+    print(f"Number of fps: {ds.fps}")
+    print(f"Camera keys: {ds.meta.camera_keys}")
+    features = features = dataset_to_policy_features(ds.features)
+    output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
+    input_features = {key: ft for key, ft in features.items() if key not in output_features}
+    print("Output features: \n", output_features)
+    print("Input features: \n", input_features)
+    # print("Full features:")
+    # print(dataset.features)
+    print("\n")
+
 def benchmark_loader(loader, num_batches=100):
 
+    # warm-up workers
     it = iter(loader)
-    _ = next(it)  # warm-up workers
+    _ = next(it)  
 
-    num_batches = min(num_batches, len(loader))
+    num_batches = min(num_batches, len(loader)-1)
 
     times = []
     for _ in range(num_batches):
         t0 = time.perf_counter()
-        batch = next(it)
+        _ = next(it)
         times.append(time.perf_counter() - t0)
 
     print(f"Time stats per-batch processing (n_batches={num_batches}):")

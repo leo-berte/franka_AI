@@ -1,13 +1,11 @@
 from torch.utils.data import Dataset, DataLoader, random_split
 from pprint import pprint
 import torch
+import random
 
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
-from lerobot.common.datasets.utils import dataset_to_policy_features
-from lerobot.configs.types import FeatureType
 
-from franka_ai.dataset.transforms import CustomTransforms
-from franka_ai.dataset.utils import build_delta_timestamps
+from franka_ai.dataset.utils import build_delta_timestamps, print_dataset_info
 from franka_ai.utils.seed_everything import make_worker_init_fn
 
 
@@ -27,11 +25,10 @@ class TransformedDataset(Dataset):
         self.base = base_dataset
         self.custom_transforms = custom_transforms
 
-        # extract dataset features to be used
-        self.keep_features = []
-        for k in self.custom_transforms.feature_groups.keys():
-            for v in self.custom_transforms.feature_groups[k]:
-                self.keep_features.append(v)
+        # extract dataset features to be removed
+        self.skip_features = []
+        for v in self.custom_transforms.feature_groups["REMOVE"]:
+            self.skip_features.append(v)
 
     def __len__(self):
         return len(self.base)
@@ -45,7 +42,7 @@ class TransformedDataset(Dataset):
         sample = self.custom_transforms.transform(sample) 
 
         # drop unwanted features
-        sample = {k: v for k, v in sample.items() if k in self.keep_features}
+        sample = {k: v for k, v in sample.items() if k not in self.skip_features}
 
         return sample
 
@@ -97,61 +94,62 @@ def make_dataloader(
     dl_cfg = {**(dataloader_cfg or {}), **overrides}
 
     # Extract parameters
-    N_history       = dl_cfg["N_history"]
-    N_chunk         = dl_cfg["N_chunk"]
-    batch_size      = dl_cfg["batch_size"]
-    shuffle         = dl_cfg["shuffle"]
-    train_split     = dl_cfg["train_split"]
-    fps_sampling    = dl_cfg["fps_sampling"]
-    num_workers     = dl_cfg["num_workers"]
-    prefetch_factor = dl_cfg["prefetch_factor"]
-    seed_val        = dl_cfg["seed_val"]
-    print_ds_info   = dl_cfg["print_ds_info"]
-    device          = torch.device(dl_cfg["device"])
+    N_history          = dl_cfg["N_history"]
+    N_chunk            = dl_cfg["N_chunk"]
+    batch_size         = dl_cfg["batch_size"]
+    shuffle            = dl_cfg["shuffle"]
+    train_split        = dl_cfg["train_split"]
+    fps_sampling_hist  = dl_cfg["fps_sampling_hist"]
+    fps_sampling_chunk = dl_cfg["fps_sampling_chunk"]
+    num_workers        = dl_cfg["num_workers"]
+    prefetch_factor    = dl_cfg["prefetch_factor"]
+    seed_val           = dl_cfg["seed_val"]
+    print_ds_info      = dl_cfg["print_ds_info"]
+    device             = torch.device(dl_cfg["device"])
 
     # Get dataset metadata
     dataset_meta = LeRobotDatasetMetadata(repo_id=repo_id, root=local_root)
 
     # Build the delta_timestamps dict for LeRobotDataset history and future        
-    delta_timestamps = build_delta_timestamps(dataset_meta.fps, fps_sampling, N_history, N_chunk, feature_groups)
+    delta_timestamps = build_delta_timestamps(feature_groups, N_history, N_chunk, dataset_meta.fps, fps_sampling_hist, fps_sampling_chunk)
 
+    # Generate random list of indeces covering all the episodes
+    num_episodes = dataset_meta.total_episodes
+    episode_ids = list(range(num_episodes))
+    random.shuffle(episode_ids)
+    
+    # Split indeces for training and validation
+    num_train_episodes = int(num_episodes * train_split)
+    train_episodes = episode_ids[:num_train_episodes]
+    val_episodes = episode_ids[num_train_episodes:]
+    
     # Load the raw dataset (hub or local)
-    dataset = LeRobotDataset(
+    train_ds = LeRobotDataset(
         repo_id=repo_id,
         root=local_root,   
         delta_timestamps=delta_timestamps,
+        episodes=[0] # train_episodes
+    )
+
+    # Load the raw dataset (hub or local)
+    val_ds = LeRobotDataset(
+        repo_id=repo_id,
+        root=local_root,   
+        delta_timestamps=delta_timestamps,
+        episodes=[0] # val_episodes
     )
 
     # print stats
     if print_ds_info:
-        print(f"Number of episodes selected: {dataset.num_episodes}")
-        print(f"Number of fps: {dataset.fps}")
-        print(f"Camera keys: {dataset.meta.camera_keys}")
-        # print("Features:")
-        # pprint(dataset.features)
-        features = dataset_to_policy_features(dataset.features)
-        output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
-        input_features = {key: ft for key, ft in features.items() if key not in output_features}
-        print("Output features: \n", output_features)
-        print("Input features: \n", input_features)
+        print_dataset_info(train_ds, "training dataset")
+        print_dataset_info(val_ds, "validation dataset")
 
     # fix seed for reproducibility
     if seed_val is not None and seed_val >= 0:
         worker_fn = make_worker_init_fn(seed_val)
-        g = torch.Generator().manual_seed(seed_val)
     else:
         worker_fn = None   
-        g = None
 
-    # Random split between training and validation
-    num_items = len(dataset)
-    print("Total number of frames in the dataset: ", num_items)
-    num_train = int(num_items * train_split)
-    num_val = num_items - num_train
-    train_ds, val_ds = random_split(dataset, [num_train, num_val], generator=g)
-    print("Total number of frames in the training dataset: ", num_train)
-    print("Total number of frames in the validation dataset: : ", num_val)
-    
     # Apply transforms
     transformed_train_ds = TransformedDataset(train_ds, transforms_train)
     transformed_val_ds = TransformedDataset(val_ds, transforms_val)
@@ -186,6 +184,7 @@ def make_dataloader(
     stats_loader = DataLoader(
         transformed_stats_ds,
         batch_size=batch_size,
+        shuffle=False,
         num_workers=num_workers,
         pin_memory=device.type!="cpu",
         prefetch_factor=prefetch_factor,

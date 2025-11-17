@@ -1,17 +1,29 @@
+# ----------
+# DATALOADER
+# ----------
+
 dataloader:
-  N_history: 10  
-  N_chunk: 10
+
+  N_history: 3
+  N_chunk: 8 # 16
   batch_size: 8
   shuffle: True
-  train_split: 0.05
-  fps_sampling: 10
+  train_split: 0.8
+  fps_sampling_hist: 10
+  fps_sampling_chunk: 30
   num_workers: 4
   prefetch_factor: 2
   device: "cuda"
   seed_val: -1 # -1 means no fixed seed
   print_ds_info: True 
 
+
+# -------
+# DATASET
+# -------
+
 dataset:
+
   features:
     VISUAL:
       - observation.images.front_cam1
@@ -22,6 +34,9 @@ dataset:
       - observation.state
     ACTION:
       - action
+    REMOVE:
+      - observation.images.gripper_camera_depth
+
   state_slices:
     q: [0, 7]
     qdot: [7, 14]
@@ -32,7 +47,12 @@ dataset:
     ee_quaternion: [31, 35]
     
 
+# ---------------
+# TRANSFORMATIONS
+# ---------------
+
 transformations:
+
   img_resize: [224, 224]
   
   noise_std_dev:
@@ -57,5 +77,3 @@ transformations:
       degrees: 5
       translate: [0.05, 0.05]
       p: 0.5
-
-

@@ -7,8 +7,6 @@ import csv
 import os
 
 from lerobot.configs.types import FeatureType, NormalizationMode
-from lerobot.common.datasets.lerobot_dataset import LeRobotDatasetMetadata
-from lerobot.common.datasets.utils import dataset_to_policy_features
 from lerobot.common.policies.diffusion.configuration_diffusion import DiffusionConfig
 from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
 
@@ -62,9 +60,13 @@ def train(pretrained_path = None, learning_rate = 1e-4):
     save_ckpt_freq = 4 # 20000 # save checkpoints [20000]
 
     # consistency checks
-    assert eval_freq % log_freq == 0, "eval_freq must be a multiple of log_freq"
-    assert save_ckpt_freq % eval_freq == 0 and save_ckpt_freq >= eval_freq, "save_ckpt_freq must be >= eval_freq and a multiple of it"
-    assert training_steps % save_ckpt_freq == 0, "training_steps must be a multiple of save_ckpt_freq to ensure final evaluation alignment"
+    if eval_freq % log_freq != 0:
+        raise ValueError("eval_freq must be a multiple of log_freq")
+    if save_ckpt_freq < eval_freq or save_ckpt_freq % eval_freq != 0:
+        raise ValueError("save_ckpt_freq must be >= eval_freq and a multiple of it")
+    if training_steps % save_ckpt_freq != 0:
+        raise ValueError("training_steps must be a multiple of save_ckpt_freq to ensure final evaluation alignment")
+
 
 
 
@@ -78,6 +80,8 @@ def train(pretrained_path = None, learning_rate = 1e-4):
     dataloader_cfg, dataset_cfg, transformations_cfg = get_configs_dataset("configs/dataset.yaml")
     
 
+
+
     # Eventually freeze seed for reproducibility
     seed_val = dataloader_cfg["seed_val"]
     if seed_val is not None and seed_val >= 0:
@@ -85,13 +89,15 @@ def train(pretrained_path = None, learning_rate = 1e-4):
 
     # Prepare transforms for training
     transforms_train = CustomTransforms(
+        dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         transformations_cfg=transformations_cfg,
-        train=True
+        train=True # True: transformations ON ; False: transformations OFF
     )
 
     # Prepare transforms for inference
     transforms_val = CustomTransforms(
+        dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         transformations_cfg=transformations_cfg,
         train=False
@@ -99,11 +105,11 @@ def train(pretrained_path = None, learning_rate = 1e-4):
 
     # Prepare transforms for computing dataset statistics only
     transforms_stats = CustomTransforms(
+        dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         transformations_cfg=transformations_cfg,
         train=False
     )
-
 
     # Create loaders
     train_loader, val_loader, stats_loader = make_dataloader(
@@ -119,27 +125,26 @@ def train(pretrained_path = None, learning_rate = 1e-4):
     features = dataset_to_policy_features_patch(train_loader, dataset_cfg["features"])
     output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
     input_features = {key: ft for key, ft in features.items() if ft.type is not FeatureType.ACTION}
+    print("New output_features: ", output_features)
     print("New input_features: ", input_features)
-
-    # # skip normalize/unnormalize
-    # normalization_mapping = {
-    #     "VISUAL": NormalizationMode.IDENTITY,
-    #     "STATE": NormalizationMode.IDENTITY,
-    #     "ACTION": NormalizationMode.IDENTITY,
-    # }
     
+    # Define normalization and unnormalization mode
     normalization_mapping = {
     "VISUAL": NormalizationMode.MEAN_STD,
-    "STATE": NormalizationMode.MEAN_STD,
+    "STATE": NormalizationMode.MIN_MAX,
     "ACTION": NormalizationMode.MIN_MAX,
     }
-    
-    # Policies are initialized with a configuration class, in this case `DiffusionConfig`. 
-    cfg = DiffusionConfig(input_features=input_features, output_features=output_features, normalization_mapping=normalization_mapping)
 
-    # -------------------
+    # Policies are initialized with a configuration class, in this case `DiffusionConfig`. 
+    cfg = DiffusionConfig(input_features=input_features, 
+                          output_features=output_features, 
+                          normalization_mapping=normalization_mapping,
+                          n_obs_steps=dataloader_cfg["N_history"],
+                          horizon=dataloader_cfg["N_chunk"])
+
+    # ---------------------
     # POLICY INITIALIZATION
-    # -------------------
+    # ---------------------
 
     if pretrained_path is None:
         # From scratch

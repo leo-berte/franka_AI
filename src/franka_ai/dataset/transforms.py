@@ -4,14 +4,20 @@ import torchvision.transforms as T
 import torch
 import numpy as np
 
+
+
 # TODO: 
+# 1) flag nel config file: se esiste json con episode stats, importalo e calcola global stats on train_indeces_ep, otherwise compute on full dataset and save
+# --> from lerobot.common.datasets.compute_stats import aggregate_stats, compute_episode_stats
+
 # 1) Check values resize, bright, ..
 # 2) gripper continuous2dicsrete conversion (check 0 o 1 values)
-# 3) normalize and unnormalize capire come vengono fatti da lerobot (soprattutto per immagini)
 # 5) add relative vs absolute cart pose as actions/state
 # 6) bring kornia on GPU? Ma ha senso spostare i dati già su GPU qui? non fare lavoro doppio
-# 7) capire random_split se mi mischia episodi/frames tra train/val dataset
-# capire cosa accade con N_hist, N_chunk = 0, 1
+# 9) salva delle immagini post trasformazione nel training e vedi che forma hanno
+# 10) immagini post trasformazioni sono ancora in 0,1? xke datasets stats si aspetta quello
+
+
 
 
 class CustomTransforms():
@@ -32,19 +38,22 @@ class CustomTransforms():
         feature_groups: eature names used in the dataset.
     """
 
-    def __init__(self, dataset_cfg, transformations_cfg, train=False):
+    def __init__(self, dataloader_cfg, dataset_cfg, transformations_cfg, train=False):
         
         self.train = train
         self.feature_groups = dataset_cfg["features"]
         state_ranges = dataset_cfg["state_slices"]
         self.state_slices = {k: slice(v[0], v[1]) for k, v in state_ranges.items()}
-        self.transformations_cfg = transformations_cfg
+
+        # history and chunk sizes
+        self.N_history = dataloader_cfg["N_history"]
+        self.N_chunk = dataloader_cfg["N_chunk"]
 
         # image resize
-        self.img_resize = self.transformations_cfg["img_resize"]
+        self.img_resize = transformations_cfg["img_resize"]
 
         # noise stds
-        noise = self.transformations_cfg["noise_std_dev"]
+        noise = transformations_cfg["noise_std_dev"]
         self.joint_pos_std_dev = noise["joint_pos"]
         self.joint_vel_std_dev = noise["joint_vel"]
         self.joint_torque_std_dev = noise["joint_torque"]
@@ -52,7 +61,7 @@ class CustomTransforms():
         self.cart_orientation_std_dev = noise["cart_orientation"]
 
         # image augmentations
-        aug_cfg = self.transformations_cfg["augmentations"]
+        aug_cfg = transformations_cfg["augmentations"]
         
         # convert img to [0,1] + resize (both training and inference)
         base_tf_pre = torch.nn.Sequential(
@@ -60,12 +69,6 @@ class CustomTransforms():
             # K.Normalize(mean=torch.tensor([0.0, 0.0, 0.0]),
             #             std=torch.tensor([255.0, 255.0, 255.0]))
         )
-
-        # # convert img to [-1,1] (both training and inference)
-        # base_tf_post = torch.nn.Sequential(
-        #     K.Normalize(mean=torch.tensor([0.5, 0.5, 0.5]),
-        #                 std=torch.tensor([0.5, 0.5, 0.5]))
-        # )
 
         # training image augmentations
         train_tf = torch.nn.Sequential(
@@ -92,8 +95,6 @@ class CustomTransforms():
         )
 
         # define full pipeline for both training and inference
-        # self.img_tf_inference = torch.nn.Sequential(base_tf_pre, base_tf_post)
-        # self.img_tf_train = torch.nn.Sequential(base_tf_pre, train_tf, base_tf_post)
         self.img_tf_inference = torch.nn.Sequential(base_tf_pre)
         self.img_tf_train = torch.nn.Sequential(base_tf_pre, train_tf)
 
@@ -147,15 +148,16 @@ class CustomTransforms():
     def transform(self, sample):
         
         for k, v in sample.items(): # each sample contains the N_h dimension (but no B dimension)
-
+            
             # images
             if k in self.feature_groups["VISUAL"]:
+
                 v = v.to(torch.float32) # convert data to tensor float32
                 sample[k] = self.img_tf_train(v) if self.train else self.img_tf_inference(v)
 
             # state
             if k in self.feature_groups["STATE"]:
-                
+
                 v = v.to(torch.float32) # convert data to tensor float32
 
                 # add noise on joint velocities
@@ -186,5 +188,20 @@ class CustomTransforms():
                 ], dim=-1)
 
                 sample[k] = v_new
+
+            # action
+            if k in self.feature_groups["ACTION"]:
+
+                v = v.to(torch.float32) # convert data to tensor float32
+                past_actions = v[:self.N_history, :]
+                future_actions = v[self.N_history:, :]
+                sample[k] = future_actions
+
+        # append past actions to state
+        state_ft_name = self.feature_groups["STATE"][0]
+        sample[state_ft_name] = torch.cat([
+            sample[state_ft_name],
+            past_actions,
+        ], dim=-1)
 
         return sample

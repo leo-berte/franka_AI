@@ -13,7 +13,6 @@ Run the code: python src/franka_ai/dataset/main.py --abs_path /home/leonardo/Doc
 """
 
 
-
 # TODO: 
 # 1) dataloader profiler based on transforms ON/OFF and dataloader params
 
@@ -28,6 +27,7 @@ def main():
 
     # Prepare transforms for training
     transforms_train = CustomTransforms(
+        dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         transformations_cfg=transformations_cfg,
         train=True
@@ -35,6 +35,7 @@ def main():
 
     # Prepare transforms for inference
     transforms_val = CustomTransforms(
+        dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         transformations_cfg=transformations_cfg,
         train=False
@@ -42,11 +43,11 @@ def main():
 
     # Prepare transforms for computing dataset statistics only
     transforms_stats = CustomTransforms(
+        dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         transformations_cfg=transformations_cfg,
         train=False
     )
-
 
     # Create loaders
     train_loader, val_loader, stats_loader = make_dataloader(
@@ -58,13 +59,9 @@ def main():
         transforms_stats=transforms_stats
     )
 
-    # benchmark dataloader
-    benchmark_loader(train_loader)
-    benchmark_loader2(train_loader)
-
     # iterate over dataloader
     for batch in train_loader:
-        
+
         # print all keys in dataset
         for k, v in batch.items():
             if isinstance(v, torch.Tensor):
@@ -79,6 +76,10 @@ def main():
         print(f"{batch['action'].shape=}")  # (B, N_c, n_actions)
         print(f"{batch['action'][0,0,:]}")  # (_, _, n_actions)
         break
+
+    # benchmark dataloader
+    benchmark_loader(train_loader)
+    benchmark_loader2(train_loader)
 
 
 if __name__ == "__main__":

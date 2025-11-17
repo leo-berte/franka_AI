@@ -1,4 +1,9 @@
+# --------
+# TRAINING
+# --------
+
 training:
+
   training_steps: 12    # number of training steps [60000]
   log_freq: 2           # logs train loss, gradNorm, lr [200]
   eval_freq: 4          # logs eval loss [2000]
