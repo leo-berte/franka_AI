@@ -38,7 +38,7 @@ class CustomTransforms():
         feature_groups: eature names used in the dataset.
     """
 
-    def __init__(self, dataloader_cfg, dataset_cfg, transformations_cfg, train=False):
+    def __init__(self, dataloader_cfg, dataset_cfg, transforms_cfg, train=False):
         
         self.train = train
         self.feature_groups = dataset_cfg["features"]
@@ -50,10 +50,10 @@ class CustomTransforms():
         self.N_chunk = dataloader_cfg["N_chunk"]
 
         # image resize
-        self.img_resize = transformations_cfg["img_resize"]
+        self.img_resize = transforms_cfg["img_resize"]
 
         # noise stds
-        noise = transformations_cfg["noise_std_dev"]
+        noise = transforms_cfg["noise_std_dev"]
         self.joint_pos_std_dev = noise["joint_pos"]
         self.joint_vel_std_dev = noise["joint_vel"]
         self.joint_torque_std_dev = noise["joint_torque"]
@@ -61,7 +61,7 @@ class CustomTransforms():
         self.cart_orientation_std_dev = noise["cart_orientation"]
 
         # image augmentations
-        aug_cfg = transformations_cfg["augmentations"]
+        aug_cfg = transforms_cfg["augmentations"]
         
         # convert img to [0,1] + resize (both training and inference)
         base_tf_pre = torch.nn.Sequential(

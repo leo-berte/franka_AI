@@ -6,6 +6,18 @@ training:
 
   training_steps: 12    # number of training steps [60000]
   log_freq: 2           # logs train loss, gradNorm, lr [200]
-  eval_freq: 4          # logs eval loss [2000]
-  save_ckpt_freq: 4     # 20000 # save checkpoints [20000]
+  eval_freq: 2          # logs eval loss [2000]
+  save_ckpt_freq: 2     # 20000 # save checkpoints [20000]
   learning_rate: 0.0005
+
+
+# -------------
+# NORMALIZATION
+# -------------
+
+normalization_mapping:
+
+  VISUAL: "MEAN_STD"
+  STATE: "MIN_MAX"
+  ACTION: "MIN_MAX"
+    

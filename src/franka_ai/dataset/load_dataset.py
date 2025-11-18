@@ -49,7 +49,7 @@ class TransformedDataset(Dataset):
 
 def make_dataloader(
     repo_id=None, 
-    local_root=None, 
+    dataset_path=None, 
     dataloader_cfg=None,
     feature_groups=None,
     transforms_train=None,
@@ -73,7 +73,7 @@ def make_dataloader(
 
     Args:
         repo_id: Hugging Face repo ID
-        local_root: local dataset root directory
+        dataseth_path: local dataset root directory
         visual_obs_names: names of the visual observations
         device: CPU or GPU
         batch_size: number of samples per batch
@@ -108,7 +108,7 @@ def make_dataloader(
     device             = torch.device(dl_cfg["device"])
 
     # Get dataset metadata
-    dataset_meta = LeRobotDatasetMetadata(repo_id=repo_id, root=local_root)
+    dataset_meta = LeRobotDatasetMetadata(repo_id=repo_id, root=dataset_path)
 
     # Build the delta_timestamps dict for LeRobotDataset history and future        
     delta_timestamps = build_delta_timestamps(feature_groups, N_history, N_chunk, dataset_meta.fps, fps_sampling_hist, fps_sampling_chunk)
@@ -126,7 +126,7 @@ def make_dataloader(
     # Load the raw dataset (hub or local)
     train_ds = LeRobotDataset(
         repo_id=repo_id,
-        root=local_root,   
+        root=dataset_path,   
         delta_timestamps=delta_timestamps,
         episodes=[0] # train_episodes
     )
@@ -134,7 +134,7 @@ def make_dataloader(
     # Load the raw dataset (hub or local)
     val_ds = LeRobotDataset(
         repo_id=repo_id,
-        root=local_root,   
+        root=dataset_path,   
         delta_timestamps=delta_timestamps,
         episodes=[0] # val_episodes
     )

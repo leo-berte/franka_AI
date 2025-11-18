@@ -1,36 +1,54 @@
-import os
 from datetime import datetime
+from shutil import copyfile
+import os
 import yaml
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from lerobot.configs.types import FeatureType, PolicyFeature
-
-# TODO:
-# 2) magari in input setup_folders accetta policy name o percorso di salvataggio dall utente?
+from lerobot.configs.types import FeatureType, PolicyFeature, NormalizationMode
 
 
-def setup_folders():
+def get_train_config(config_rel_path):
+
+    # set path
+    path = os.path.join(os.getcwd(), config_rel_path)
+
+    # open config
+    with open(path, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    train_cfg = cfg["training"]
+    normalization_cfg = cfg["normalization_mapping"]
+
+    return train_cfg, normalization_cfg
+    
+def setup_folders(policy_type, dataset_path):
 
     """Create timestamped output folder structure for training run."""
     
     # Base folder for all experiments
     base_output_dir = os.path.join(os.getcwd(), "outputs")
 
-    # Unique run name
+    # Take timestamp
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    # run_name = f"{timestamp}_{cfg.__class__.__name__.lower()}_{dataset_id.split('/')[-1]}"
-    # output_dir = os.path.join(base_output_dir, run_name)
+
+    # Set run name
+    dataset_name = dataset_path.split('/')[-1]
+    run_name = f"{dataset_name}_{policy_type}_{timestamp}"
 
     # Subfolders
-    checkpoints_dir = os.path.join(base_output_dir, "checkpoints", timestamp)
-    tensorboard_dir = os.path.join(base_output_dir, "tensorboard")
+    checkpoints_dir = os.path.join(base_output_dir, "checkpoints", run_name)
+    tensorboard_dir = os.path.join(base_output_dir, "tensorboard", run_name)
 
     os.makedirs(checkpoints_dir, exist_ok=True)
     os.makedirs(tensorboard_dir, exist_ok=True)
 
     # TensorBoard writer
     writer = SummaryWriter(log_dir=tensorboard_dir)
+
+    # Save configs inside checkpoint folder for reproducibility
+    copyfile("configs/dataset.yaml", os.path.join(checkpoints_dir, "dataset.yaml"))
+    copyfile("configs/train.yaml", os.path.join(checkpoints_dir, "train.yaml"))
 
     return checkpoints_dir, tensorboard_dir, writer
 
@@ -51,6 +69,16 @@ def update_best_model_symlink(checkpoints_dir, ckpt_path, best_val_loss, avg_val
         print(f"New best model at step {step}, val_loss={best_val_loss:.4f}")
 
     return best_val_loss
+
+def parse_normalization_mapping(normalization_cfg):
+
+    str_to_enum = {
+        "MEAN_STD": NormalizationMode.MEAN_STD,
+        "MIN_MAX": NormalizationMode.MIN_MAX,
+        "IDENTITY": NormalizationMode.IDENTITY,
+    }
+
+    return {k: str_to_enum[v] for k, v in normalization_cfg.items()}
 
 def dataset_to_policy_features_patch(dataloader, features):
 

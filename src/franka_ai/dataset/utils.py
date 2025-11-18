@@ -1,5 +1,4 @@
 import torchvision.transforms as T
-import argparse
 import torch
 import time
 import yaml
@@ -60,21 +59,6 @@ def build_delta_timestamps(feature_groups, N_h, N_c, fps_dataset, fps_sampling_h
 
     return delta_timestamps
 
-def get_dataset_path(default_rel_path="data/test1"):
-
-    # set parser
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--abs_path",
-        type=str,
-        required=False,
-        help="Absolute path to the dataset folder"
-    )
-    args = parser.parse_args()
-
-    # return absolute path to the dataset
-    return os.path.join(os.getcwd(), default_rel_path) if not args.abs_path else args.abs_path
-
 def get_configs_dataset(config_rel_path):
 
     # set path
@@ -87,9 +71,9 @@ def get_configs_dataset(config_rel_path):
     # extract sections
     dataset_cfg = cfg["dataset"]
     dataloader_cfg = cfg["dataloader"]
-    transformations_cfg = cfg["transformations"]
+    transforms_cfg = cfg["transformations"]
 
-    return dataloader_cfg, dataset_cfg, transformations_cfg
+    return dataloader_cfg, dataset_cfg, transforms_cfg
 
 def print_dataset_info(ds, ds_type):
     

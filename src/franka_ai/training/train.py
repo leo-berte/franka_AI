@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
-from pathlib import Path
-import collections
+import argparse
 import time
 import torch
 import csv
@@ -11,26 +10,44 @@ from lerobot.common.policies.diffusion.configuration_diffusion import DiffusionC
 from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
 
 from torch.nn.utils import clip_grad_norm_
-from torch.utils.tensorboard import SummaryWriter
 
 from franka_ai.utils.seed_everything import seed_everything
 from franka_ai.dataset.load_dataset import make_dataloader
 from franka_ai.dataset.transforms import CustomTransforms
-from franka_ai.dataset.utils import get_configs_dataset, get_dataset_path
-from franka_ai.training.utils import setup_folders, update_best_model_symlink, dataset_to_policy_features_patch, compute_dataset_stats_patch
+from franka_ai.dataset.utils import get_configs_dataset
+from franka_ai.training.utils import *
 
 """
-Run the code: python src/franka_ai/training/train.py
+Run the code: python src/franka_ai/training/train.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/test1 
+                                                     --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints
+                                                     --policy ACT
 Activate tensorboard: (from where there is this code): python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/tensorboard
 """
 
 
 # TODO:
-# 1) params da config file oppure da argparser? ne basta uno dei due? --> checkpoint dir e dataset dir e modello da argparser
-# 2) optimize training (see notes)
+# Optimize training (see notes)
 
 
-def train(pretrained_path = None, learning_rate = 1e-4):
+
+def parse_args():
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--dataset", type=str, required=True,
+                        help="Absolute path to dataset folder")
+
+    parser.add_argument("--pretrained", type=str, default=None,
+                        help="Absolute path to pretrained checkpoint")
+
+    parser.add_argument("--policy", type=str, default="DP",
+                        choices=["DP", "ACT"],
+                        help="Policy type")
+
+    return parser.parse_args()
+
+
+def train():
 
     """
 
@@ -40,8 +57,22 @@ def train(pretrained_path = None, learning_rate = 1e-4):
     If pretrained_path is provided → fine-tune from checkpoint.
     """
 
+    # -------------------
+    # INIT FOLDERS & ARGS
+    # -------------------
+
+    # Extract command line args
+    args = parse_args()
+    dataset_path = args.dataset
+    pretrained_path = args.pretrained
+    policy_type = args.policy
+
+    # Load configs
+    dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset("configs/dataset.yaml")
+    train_cfg, normalization_cfg = get_train_config("configs/train.yaml")
+
     # Get folders to save weights and tensorboard logs
-    checkpoints_dir, tensorboard_dir, tsbrd_writer = setup_folders()
+    checkpoints_dir, tensorboard_dir, tsbrd_writer = setup_folders(policy_type, dataset_path)
 
     # create CSV file to store training losses
     csv_path = os.path.join(checkpoints_dir, "loss_log.csv")
@@ -49,17 +80,16 @@ def train(pretrained_path = None, learning_rate = 1e-4):
         csv_writer = csv.writer(f)
         csv_writer.writerow(["step", "train_loss", "val_loss"])
 
-    # Get parameters
-    root_dataset_path = os.path.join(os.getcwd(), "data/test1")
-    repo_id=None # "lerobot/pusht" # dataset folder name # magari preso in input da utente questo percorso? 
-    # pretrained_path = None
-    device = torch.device("cuda") # select your device
-    training_steps = 12 # number of training steps [60000]
-    log_freq = 2    # logs train loss, gradNorm, lr [200]
-    eval_freq = 4   # logs eval loss [2000]
-    save_ckpt_freq = 4 # 20000 # save checkpoints [20000]
+    # Set parameters from config
+    device = torch.device(dataloader_cfg["device"])
+    seed_val = dataloader_cfg["seed_val"]
+    training_steps = train_cfg["training_steps"] # number of training steps [60000]
+    log_freq = train_cfg["log_freq"] # logs train loss, gradNorm, lr [200]
+    eval_freq = train_cfg["eval_freq"] # logs eval loss [2000]
+    save_ckpt_freq = train_cfg["save_ckpt_freq"] # 20000 # save checkpoints [20000]
+    learning_rate = train_cfg["learning_rate"]
 
-    # consistency checks
+    # Consistency checks
     if eval_freq % log_freq != 0:
         raise ValueError("eval_freq must be a multiple of log_freq")
     if save_ckpt_freq < eval_freq or save_ckpt_freq % eval_freq != 0:
@@ -67,59 +97,28 @@ def train(pretrained_path = None, learning_rate = 1e-4):
     if training_steps % save_ckpt_freq != 0:
         raise ValueError("training_steps must be a multiple of save_ckpt_freq to ensure final evaluation alignment")
 
-
-
-
-
-    # ISTRUZIONE RIPETUTA ANCHE NEL MAKE LOADER, DA CAPIRE
-    # Get path to dataset (via argparser)
-    local_root = get_dataset_path()
-
-    # ISTRUZIONE RIPETUTA ANCHE NEL MAKE LOADER, DA CAPIRE
-    # Get configs about dataloader and dataset 
-    dataloader_cfg, dataset_cfg, transformations_cfg = get_configs_dataset("configs/dataset.yaml")
-    
-
-
-
     # Eventually freeze seed for reproducibility
-    seed_val = dataloader_cfg["seed_val"]
     if seed_val is not None and seed_val >= 0:
         seed_everything(seed_val)
 
-    # Prepare transforms for training
-    transforms_train = CustomTransforms(
-        dataloader_cfg=dataloader_cfg,
-        dataset_cfg=dataset_cfg,
-        transformations_cfg=transformations_cfg,
-        train=True # True: transformations ON ; False: transformations OFF
-    )
-
-    # Prepare transforms for inference
-    transforms_val = CustomTransforms(
-        dataloader_cfg=dataloader_cfg,
-        dataset_cfg=dataset_cfg,
-        transformations_cfg=transformations_cfg,
-        train=False
-    )
-
-    # Prepare transforms for computing dataset statistics only
-    transforms_stats = CustomTransforms(
-        dataloader_cfg=dataloader_cfg,
-        dataset_cfg=dataset_cfg,
-        transformations_cfg=transformations_cfg,
-        train=False
-    )
+    # Prepare transforms for training, inference and for computing dataset stats
+    transforms_train = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=True)
+    transforms_val = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=False)
+    transforms_stats = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=False)
 
     # Create loaders
     train_loader, val_loader, stats_loader = make_dataloader(
-        local_root=local_root,
+        dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         feature_groups=dataset_cfg["features"],
         transforms_train=transforms_train,
         transforms_val=transforms_val,
         transforms_stats=transforms_stats
     )
+
+    # ---------------------
+    # POLICY INITIALIZATION
+    # ---------------------
 
     # Get dataset input/output stats
     features = dataset_to_policy_features_patch(train_loader, dataset_cfg["features"])
@@ -128,12 +127,8 @@ def train(pretrained_path = None, learning_rate = 1e-4):
     print("New output_features: ", output_features)
     print("New input_features: ", input_features)
     
-    # Define normalization and unnormalization mode
-    normalization_mapping = {
-    "VISUAL": NormalizationMode.MEAN_STD,
-    "STATE": NormalizationMode.MIN_MAX,
-    "ACTION": NormalizationMode.MIN_MAX,
-    }
+    # Define normalization and unnormalization mode 
+    normalization_mapping = parse_normalization_mapping(normalization_cfg)
 
     # Policies are initialized with a configuration class, in this case `DiffusionConfig`. 
     cfg = DiffusionConfig(input_features=input_features, 
@@ -142,18 +137,14 @@ def train(pretrained_path = None, learning_rate = 1e-4):
                           n_obs_steps=dataloader_cfg["N_history"],
                           horizon=dataloader_cfg["N_chunk"])
 
-    # ---------------------
-    # POLICY INITIALIZATION
-    # ---------------------
-
-    if pretrained_path is None:
-        # From scratch
-        new_dataset_stats = compute_dataset_stats_patch(stats_loader, dataset_cfg["features"])
-        policy = DiffusionPolicy(cfg, dataset_stats=new_dataset_stats)
-    else:
+    if pretrained_path:
         # Load from checkpoint
         policy = DiffusionPolicy.from_pretrained(pretrained_path)
         print(f"Loaded pretrained policy from {pretrained_path}")
+    else:
+        # From scratch
+        new_dataset_stats = compute_dataset_stats_patch(stats_loader, dataset_cfg["features"])
+        policy = DiffusionPolicy(cfg, dataset_stats=new_dataset_stats)
 
     # Set training mode
     policy.train() # during training layers like Dropout or BatchNorm are ON 
@@ -279,10 +270,6 @@ def train(pretrained_path = None, learning_rate = 1e-4):
 
 if __name__ == "__main__":
     
-    # Example usage:
-    # train()  # from scratch
-    # train(pretrained_path="outputs/train/example_pusht_diffusion", learning_rate = 1e-5)  # fine-tune (lower learning rate)
-
     train()
 
 

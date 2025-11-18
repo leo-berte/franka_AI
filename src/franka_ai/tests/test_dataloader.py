@@ -1,4 +1,3 @@
-import collections
 import argparse
 import torch
 import time
@@ -6,10 +5,10 @@ import os
 
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.load_dataset import make_dataloader
-from franka_ai.dataset.utils import get_configs_dataset, get_dataset_path, benchmark_loader, benchmark_loader2
+from franka_ai.dataset.utils import get_configs_dataset, benchmark_loader, benchmark_loader2
 
 """
-Run the code: python src/franka_ai/dataset/main.py --abs_path /home/leonardo/Documents/Coding/franka_AI/data/test1
+Run the code: python src/franka_ai/tests/test_dataloader.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/test1
 """
 
 
@@ -17,19 +16,35 @@ Run the code: python src/franka_ai/dataset/main.py --abs_path /home/leonardo/Doc
 # 1) dataloader profiler based on transforms ON/OFF and dataloader params
 
 
+def get_dataset_path(default_rel_path="data/test1"):
+
+    # set parser
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        required=False,
+        help="Absolute path to the dataset folder"
+    )
+    args = parser.parse_args()
+
+    # return absolute path to the dataset
+    return os.path.join(os.getcwd(), default_rel_path) if not args.abs_path else args.abs_path
+
+
 def main():
 
     # Get path to dataset (via argparser)
-    local_root = get_dataset_path()
+    dataset_path = get_dataset_path()
 
     # Get configs about dataloader and dataset 
-    dataloader_cfg, dataset_cfg, transformations_cfg = get_configs_dataset("configs/dataset.yaml")
+    dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset("configs/dataset.yaml")
 
     # Prepare transforms for training
     transforms_train = CustomTransforms(
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
-        transformations_cfg=transformations_cfg,
+        transforms_cfg=transforms_cfg,
         train=True
     )
 
@@ -37,7 +52,7 @@ def main():
     transforms_val = CustomTransforms(
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
-        transformations_cfg=transformations_cfg,
+        transforms_cfg=transforms_cfg,
         train=False
     )
 
@@ -45,13 +60,13 @@ def main():
     transforms_stats = CustomTransforms(
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
-        transformations_cfg=transformations_cfg,
+        transforms_cfg=transforms_cfg,
         train=False
     )
 
     # Create loaders
     train_loader, val_loader, stats_loader = make_dataloader(
-        local_root=local_root,
+        dataseth_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         feature_groups=dataset_cfg["features"],
         transforms_train=transforms_train,
