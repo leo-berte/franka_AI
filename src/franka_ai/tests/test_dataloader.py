@@ -8,28 +8,35 @@ from franka_ai.dataset.load_dataset import make_dataloader
 from franka_ai.dataset.utils import get_configs_dataset, benchmark_loader, benchmark_loader2
 
 """
-Run the code: python src/franka_ai/tests/test_dataloader.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/test1
-"""
+Run the code: python src/franka_ai/tests/test_dataloader.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today
 
+Visualize lerobot dataset uploaded in HF:
+
+python -m lerobot.scripts.visualize_dataset --repo-id lerobot/pusht --episode-index 0
+
+Visualize custom dataset saved locally:
+
+python -m lerobot.scripts.visualize_dataset --repo-id today --root /home/leonardo/Documents/Coding/franka_AI/data/today_data/today --episode-index 0
+"""
 
 # TODO: 
 # 1) dataloader profiler based on transforms ON/OFF and dataloader params
 
 
-def get_dataset_path(default_rel_path="data/test1"):
+def get_dataset_path():
 
     # set parser
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dataset",
         type=str,
-        required=False,
+        required=True,
         help="Absolute path to the dataset folder"
     )
     args = parser.parse_args()
 
     # return absolute path to the dataset
-    return os.path.join(os.getcwd(), default_rel_path) if not args.abs_path else args.abs_path
+    return args.dataset
 
 
 def main():
@@ -56,22 +63,13 @@ def main():
         train=False
     )
 
-    # Prepare transforms for computing dataset statistics only
-    transforms_stats = CustomTransforms(
-        dataloader_cfg=dataloader_cfg,
-        dataset_cfg=dataset_cfg,
-        transforms_cfg=transforms_cfg,
-        train=False
-    )
-
     # Create loaders
-    train_loader, val_loader, stats_loader = make_dataloader(
-        dataseth_path=dataset_path,
+    train_loader, _, val_loader, _ = make_dataloader(
+        dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         feature_groups=dataset_cfg["features"],
         transforms_train=transforms_train,
-        transforms_val=transforms_val,
-        transforms_stats=transforms_stats
+        transforms_val=transforms_val
     )
 
     # iterate over dataloader

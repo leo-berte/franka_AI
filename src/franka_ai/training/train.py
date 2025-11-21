@@ -1,24 +1,26 @@
 import matplotlib.pyplot as plt
+from pathlib import Path
 import argparse
 import time
 import torch
 import csv
 import os
 
-from lerobot.configs.types import FeatureType, NormalizationMode
+from lerobot.configs.types import FeatureType
 from lerobot.common.policies.diffusion.configuration_diffusion import DiffusionConfig
 from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
+from lerobot.common.datasets.compute_stats import aggregate_stats
 
 from torch.nn.utils import clip_grad_norm_
 
 from franka_ai.utils.seed_everything import seed_everything
 from franka_ai.dataset.load_dataset import make_dataloader
 from franka_ai.dataset.transforms import CustomTransforms
-from franka_ai.dataset.utils import get_configs_dataset
+from franka_ai.dataset.utils import get_configs_dataset, load_episodes_stats_patch
 from franka_ai.training.utils import *
 
 """
-Run the code: python src/franka_ai/training/train.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/test1 
+Run the code: python src/franka_ai/training/train.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today 
                                                      --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints
                                                      --policy ACT
 Activate tensorboard: (from where there is this code): python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/tensorboard
@@ -27,7 +29,6 @@ Activate tensorboard: (from where there is this code): python -m tensorboard.mai
 
 # TODO:
 # Optimize training (see notes)
-
 
 
 def parse_args():
@@ -104,16 +105,14 @@ def train():
     # Prepare transforms for training, inference and for computing dataset stats
     transforms_train = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=True)
     transforms_val = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=False)
-    transforms_stats = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=False)
 
     # Create loaders
-    train_loader, val_loader, stats_loader = make_dataloader(
+    train_loader, train_ep, val_loader, val_ep = make_dataloader(
         dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         feature_groups=dataset_cfg["features"],
         transforms_train=transforms_train,
-        transforms_val=transforms_val,
-        transforms_stats=transforms_stats
+        transforms_val=transforms_val
     )
 
     # ---------------------
@@ -142,8 +141,12 @@ def train():
         policy = DiffusionPolicy.from_pretrained(pretrained_path)
         print(f"Loaded pretrained policy from {pretrained_path}")
     else:
-        # From scratch
-        new_dataset_stats = compute_dataset_stats_patch(stats_loader, dataset_cfg["features"])
+        # Get episodes stats
+        episode_stats_path = Path(dataset_path) / "meta" / "episodes_stats_transformed.jsonl" # episodes_stats_transformed
+        episodes_stats = load_episodes_stats_patch(episode_stats_path)
+        # Aggregate episodes stats in a unique global stats
+        new_dataset_stats = aggregate_stats([episodes_stats[ep] for ep in train_ep])
+        # Setup policy
         policy = DiffusionPolicy(cfg, dataset_stats=new_dataset_stats)
 
     # Set training mode
@@ -271,5 +274,3 @@ def train():
 if __name__ == "__main__":
     
     train()
-
-

@@ -1,11 +1,11 @@
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader
 from pprint import pprint
 import torch
 import random
 
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+from lerobot.common.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
-from franka_ai.dataset.utils import build_delta_timestamps, print_dataset_info
+from franka_ai.dataset.utils import build_delta_timestamps, print_dataset_info, LeRobotDatasetPatch
 from franka_ai.utils.seed_everything import make_worker_init_fn
 
 
@@ -53,9 +53,7 @@ def make_dataloader(
     dataloader_cfg=None,
     feature_groups=None,
     transforms_train=None,
-    transforms_val=None,
-    transforms_stats=None,
-    **overrides
+    transforms_val=None
 ):
     
     """
@@ -90,22 +88,19 @@ def make_dataloader(
         (DataLoader, DataLoader): train and validation dataloaders
     """
 
-    # Dataloader params (batch_size, seed_val, ..) passed via argument will override yaml
-    dl_cfg = {**(dataloader_cfg or {}), **overrides}
-
     # Extract parameters
-    N_history          = dl_cfg["N_history"]
-    N_chunk            = dl_cfg["N_chunk"]
-    batch_size         = dl_cfg["batch_size"]
-    shuffle            = dl_cfg["shuffle"]
-    train_split        = dl_cfg["train_split"]
-    fps_sampling_hist  = dl_cfg["fps_sampling_hist"]
-    fps_sampling_chunk = dl_cfg["fps_sampling_chunk"]
-    num_workers        = dl_cfg["num_workers"]
-    prefetch_factor    = dl_cfg["prefetch_factor"]
-    seed_val           = dl_cfg["seed_val"]
-    print_ds_info      = dl_cfg["print_ds_info"]
-    device             = torch.device(dl_cfg["device"])
+    N_history          = dataloader_cfg["N_history"]
+    N_chunk            = dataloader_cfg["N_chunk"]
+    batch_size         = dataloader_cfg["batch_size"]
+    shuffle            = dataloader_cfg["shuffle"]
+    train_split        = dataloader_cfg["train_split"]
+    fps_sampling_hist  = dataloader_cfg["fps_sampling_hist"]
+    fps_sampling_chunk = dataloader_cfg["fps_sampling_chunk"]
+    num_workers        = dataloader_cfg["num_workers"]
+    prefetch_factor    = dataloader_cfg["prefetch_factor"]
+    seed_val           = dataloader_cfg["seed_val"]
+    print_ds_info      = dataloader_cfg["print_ds_info"]
+    device             = torch.device(dataloader_cfg["device"])
 
     # Get dataset metadata
     dataset_meta = LeRobotDatasetMetadata(repo_id=repo_id, root=dataset_path)
@@ -124,19 +119,19 @@ def make_dataloader(
     val_episodes = episode_ids[num_train_episodes:]
     
     # Load the raw dataset (hub or local)
-    train_ds = LeRobotDataset(
+    train_ds = LeRobotDatasetPatch(
         repo_id=repo_id,
         root=dataset_path,   
         delta_timestamps=delta_timestamps,
-        episodes=[0] # train_episodes
+        episodes=train_episodes
     )
 
     # Load the raw dataset (hub or local)
-    val_ds = LeRobotDataset(
+    val_ds = LeRobotDatasetPatch(
         repo_id=repo_id,
         root=dataset_path,   
         delta_timestamps=delta_timestamps,
-        episodes=[0] # val_episodes
+        episodes=val_episodes
     )
 
     # print stats
@@ -153,7 +148,6 @@ def make_dataloader(
     # Apply transforms
     transformed_train_ds = TransformedDataset(train_ds, transforms_train)
     transformed_val_ds = TransformedDataset(val_ds, transforms_val)
-    transformed_stats_ds = TransformedDataset(train_ds, transforms_stats)
 
     # Wrap in DataLoaders
 
@@ -181,19 +175,7 @@ def make_dataloader(
         drop_last=True            
     )
 
-    stats_loader = DataLoader(
-        transformed_stats_ds,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=device.type!="cpu",
-        prefetch_factor=prefetch_factor,
-        persistent_workers=True,
-        worker_init_fn=worker_fn,
-        drop_last=True    
-    )
-
-    return train_loader, val_loader, stats_loader
+    return train_loader, train_episodes, val_loader, val_episodes
 
 
 

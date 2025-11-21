@@ -7,12 +7,13 @@ import numpy as np
 
 
 # TODO: 
-# 1) flag nel config file: se esiste json con episode stats, importalo e calcola global stats on train_indeces_ep, otherwise compute on full dataset and save
-# --> from lerobot.common.datasets.compute_stats import aggregate_stats, compute_episode_stats
 
-# 1) Check values resize, bright, ..
 # 2) gripper continuous2dicsrete conversion (check 0 o 1 values)
 # 5) add relative vs absolute cart pose as actions/state
+
+# 3) check che scipy function è batch (N_hist) friendly 
+
+# 1) Check values resize, bright, ..
 # 6) bring kornia on GPU? Ma ha senso spostare i dati già su GPU qui? non fare lavoro doppio
 # 9) salva delle immagini post trasformazione nel training e vedi che forma hanno
 # 10) immagini post trasformazioni sono ancora in 0,1? xke datasets stats si aspetta quello
@@ -191,11 +192,18 @@ class CustomTransforms():
 
             # action
             if k in self.feature_groups["ACTION"]:
+                
+                # print("1: ", v.shape)
+                # print("2: ", self.N_history)
+                # print("3: ", self.N_chunk)
 
                 v = v.to(torch.float32) # convert data to tensor float32
                 past_actions = v[:self.N_history, :]
                 future_actions = v[self.N_history:, :]
                 sample[k] = future_actions
+  
+                # print("4: ", future_actions.shape)
+                # print("5: ", past_actions.shape)
 
         # append past actions to state
         state_ft_name = self.feature_groups["STATE"][0]
@@ -203,5 +211,6 @@ class CustomTransforms():
             sample[state_ft_name],
             past_actions,
         ], dim=-1)
+        # print("6: ", sample[state_ft_name].shape)
 
         return sample

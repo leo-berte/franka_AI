@@ -4,12 +4,25 @@ import time
 import yaml
 import os
 
-from lerobot.common.datasets.utils import dataset_to_policy_features
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.common.datasets.utils import dataset_to_policy_features, load_jsonlines, cast_stats_to_numpy
 from lerobot.configs.types import FeatureType
+
 
 # TODO: 
 # 1) Do I want images close to each others or far in time? 
   
+
+
+class LeRobotDatasetPatch(LeRobotDataset):
+    
+    def init(self, args, **kwargs):
+        super().init(args, **kwargs)
+
+    def _get_query_indices(self, idx, ep_idx):
+        current_ep_idx = self.episodes.index(ep_idx) if self.episodes is not None else ep_idx
+        return super()._get_query_indices(idx, current_ep_idx)
+
 
 def build_delta_timestamps(feature_groups, N_h, N_c, fps_dataset, fps_sampling_hist=10, fps_sampling_chunk=10):
 
@@ -57,6 +70,9 @@ def build_delta_timestamps(feature_groups, N_h, N_c, fps_dataset, fps_sampling_h
     for a in feature_groups["ACTION"]:
         delta_timestamps[a] = history + chunk
 
+    # print(delta_timestamps["action"])
+    # print(delta_timestamps["observation.state"])
+
     return delta_timestamps
 
 def get_configs_dataset(config_rel_path):
@@ -74,6 +90,22 @@ def get_configs_dataset(config_rel_path):
     transforms_cfg = cfg["transformations"]
 
     return dataloader_cfg, dataset_cfg, transforms_cfg
+
+def load_episodes_stats_patch(episode_stats_path):
+
+    if not episode_stats_path.exists():
+                raise FileNotFoundError(
+                    f"\nERROR: Missing statistics file: {episode_stats_path}\n"
+                    "You need to compute new episodes stats by executing: generate_updated_stats.py\n"
+                )
+
+    episodes_stats_raw = load_jsonlines(episode_stats_path)
+    episodes_stats = {
+    item["episode_index"]: cast_stats_to_numpy(item["stats"])
+    for item in sorted(episodes_stats_raw, key=lambda x: x["episode_index"])
+    }
+
+    return episodes_stats
 
 def print_dataset_info(ds, ds_type):
     
