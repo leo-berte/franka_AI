@@ -36,6 +36,12 @@ dataset:
       - action
     REMOVE:
       - observation.images.gripper_camera_depth
+    META:
+      - timestamp
+      - frame_index
+      - episode_index
+      - task_index
+      - index
 
   state_slices:
     q: [0, 7]

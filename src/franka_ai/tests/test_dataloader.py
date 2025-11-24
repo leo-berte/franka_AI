@@ -52,7 +52,7 @@ def main():
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         transforms_cfg=transforms_cfg,
-        train=True
+        train=False
     )
 
     # Prepare transforms for inference

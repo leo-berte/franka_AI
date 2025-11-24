@@ -11,7 +11,7 @@ from lerobot.configs.types import FeatureType
 
 # TODO: 
 # 1) Do I want images close to each others or far in time? 
-  
+# 2) capire se devo usare N_chunk = 2 --> [0.0, 0.1] o [0.1, 0.2] ???
 
 
 class LeRobotDatasetPatch(LeRobotDataset):
@@ -70,8 +70,8 @@ def build_delta_timestamps(feature_groups, N_h, N_c, fps_dataset, fps_sampling_h
     for a in feature_groups["ACTION"]:
         delta_timestamps[a] = history + chunk
 
-    # print(delta_timestamps["action"])
-    # print(delta_timestamps["observation.state"])
+    # print(delta_timestamps["action"]) --> [-0.0, 0.033337900999492256]
+    # print(delta_timestamps["observation.state"]) -> [-0.0]
 
     return delta_timestamps
 
@@ -123,10 +123,12 @@ def print_dataset_info(ds, ds_type):
     print("Output features: \n", output_features)
     print("Input features: \n", input_features)
     # print("Full features:")
-    # print(dataset.features)
+    # print(ds.features)
     print("\n")
 
 def benchmark_loader(loader, num_batches=100):
+
+    print(f"\nStarting Per-Batch Latency Benchmark analysis...")
 
     # warm-up workers
     it = iter(loader)
@@ -140,22 +142,27 @@ def benchmark_loader(loader, num_batches=100):
         _ = next(it)
         times.append(time.perf_counter() - t0)
 
-    print(f"Time stats per-batch processing (n_batches={num_batches}):")
-    print("Avg:", sum(times)/len(times))
-    print("Min:", min(times))
-    print("Max:", max(times))
+    print(f"\n[Per-Batch Latency Benchmark] ({num_batches} batches)")
+    print(f"Avg batch time : {sum(times)/len(times):.5f} s")
+    print(f"Min batch time : {min(times):.5f} s")
+    print(f"Max batch time : {max(times):.5f} s")
 
-def benchmark_loader2(loader):
+def benchmark_loader2(loader, num_batches=100):
 
-    # Warm-up workers
-    _ = next(iter(loader))
+    print(f"\nStarting Throughput Benchmark analysis...")
+
+    # warm-up workers
+    it = iter(loader)
+    _ = next(it)  
+
+    num_batches = min(num_batches, len(loader)-1)
 
     # Start timing
     start = time.perf_counter()
-    for batch in loader:
-        pass
+    for _ in range(num_batches):
+        _ = next(it)
     elapsed = time.perf_counter() - start
 
-    num_batches = len(loader)
-    print(f"Time stats per-batch processing (n_batches={num_batches}):")
-    print(f"Avg time per batch: {elapsed / num_batches:.4f}s")
+    print(f"\n[Throughput Benchmark] ({num_batches} batches)")
+    print(f"Avg batch time: {elapsed / num_batches:.5f} s")
+    print(f"Total time: {elapsed:.5f} s")

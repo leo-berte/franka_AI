@@ -8,10 +8,13 @@ import numpy as np
 
 # TODO: 
 
-# 2) gripper continuous2dicsrete conversion (check 0 o 1 values)
-# 5) add relative vs absolute cart pose as actions/state
+# 1) gripper continuous2dicsrete conversion (check 0 o 1 values)
+# 2) add relative vs absolute cart pose as actions/state
+# 3) check rviz depth
 
-# 3) check che scipy function è batch (N_hist) friendly 
+# 4) check che scipy function è batch (N_hist) friendly 
+
+
 
 # 1) Check values resize, bright, ..
 # 6) bring kornia on GPU? Ma ha senso spostare i dati già su GPU qui? non fare lavoro doppio
@@ -207,10 +210,11 @@ class CustomTransforms():
 
         # append past actions to state
         state_ft_name = self.feature_groups["STATE"][0]
+        # print("6: ", sample[state_ft_name].shape)
         sample[state_ft_name] = torch.cat([
             sample[state_ft_name],
             past_actions,
         ], dim=-1)
-        # print("6: ", sample[state_ft_name].shape)
+        # print("7: ", sample[state_ft_name].shape)
 
         return sample
