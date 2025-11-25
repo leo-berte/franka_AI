@@ -47,11 +47,11 @@ dataset:
     q: [0, 7]
     qdot: [7, 14]
     tau: [14, 21]
-    gripper: [21, 22]
-    ext_force: [22,28]
-    ee_pos: [28, 31]
-    ee_quaternion: [31, 35]
-    
+    ee_pos: [21, 24]
+    ee_quaternion: [24, 28]
+    gripper: [28, 29]
+    ext_force: [29,35]
+
 
 # ---------------
 # TRANSFORMATIONS

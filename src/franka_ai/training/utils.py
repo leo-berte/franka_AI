@@ -88,7 +88,7 @@ def dataset_to_policy_features_patch(dataloader, features):
 
     for ft_type, ft_list in features.items():
         
-        # skip REMOVE features
+        # skip unwanted features
         if ft_type == "REMOVE" or ft_type == "META":
             continue
 

@@ -13,12 +13,12 @@ from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.utils import get_configs_dataset, build_delta_timestamps, LeRobotDatasetPatch
 
 """
-Run the code: python src/franka_ai/dataset/generate_updated_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today
+Run the code: python src/franka_ai/dataset/generate_updated_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
 """
 
 # TODO:
 # 1) loro fanno anche sampling delle immagini per calcolare stats piu velocmente, io come posso farlo?
-# 3) check global stats e episdoe stats in comparison avec les original
+
 
 
 def get_dataset_path():
@@ -136,7 +136,7 @@ def compute_episode_stats_streaming(dataloader, keep_keys, feature_groups, batch
             "max": maxs[k],
             "mean": mean,
             "std": std,
-            "counts": counts_frames[k]
+            "count": torch.tensor([counts_frames[k]], dtype=torch.int64)
         }
    
     return stats
@@ -224,8 +224,6 @@ def main():
                                                    dataloader_cfg["batch_size"],
                                                    dataloader_cfg["N_history"])
         
-        print(ep_stats)
-
         # Save on file episode stats
         ep_stats = {"episode_index": ep, "stats": serialize_dict(ep_stats)}
         append_jsonlines(ep_stats, output_path)

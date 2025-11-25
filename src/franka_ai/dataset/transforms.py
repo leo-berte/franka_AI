@@ -8,13 +8,11 @@ import numpy as np
 
 # TODO: 
 
-# 1) gripper continuous2dicsrete conversion (check 0 o 1 values)
-# 2) add relative vs absolute cart pose as actions/state
-# 3) check rviz depth
-
-# 4) check che scipy function è batch (N_hist) friendly 
+# 2) check rviz depth
 
 
+
+# 1) add relative vs absolute cart pose as actions/state
 
 # 1) Check values resize, bright, ..
 # 6) bring kornia on GPU? Ma ha senso spostare i dati già su GPU qui? non fare lavoro doppio
@@ -101,7 +99,7 @@ class CustomTransforms():
         # define full pipeline for both training and inference
         self.img_tf_inference = torch.nn.Sequential(base_tf_pre)
         self.img_tf_train = torch.nn.Sequential(base_tf_pre, train_tf)
-
+    
     def joint_pos_transforms(self, v):
         noise = torch.randn_like(v[:1,:]) * self.joint_pos_std_dev # v: (N_h, D) (history) → noise: (1, D)
         return v + noise
@@ -123,7 +121,8 @@ class CustomTransforms():
     def gripper_continuous2discrete(self, value, gripper_half_width=0.037):
         return (value > gripper_half_width).float() # returns 0 (closed) or 1 (open)
 
-    def quaternion2axis_angle(self, q):
+    @staticmethod
+    def quaternion2axis_angle(q):
     
         """
         Convert quaternion(s) to axis-angle representation using SciPy.
@@ -135,8 +134,32 @@ class CustomTransforms():
         r = R.from_quat(q_np)
         aa = r.as_rotvec()  # returns axis * angle, shape (..., 3)   
         return torch.from_numpy(aa).to(q.device, dtype=q.dtype)
+    
+    @staticmethod
+    def quaternion2axis_angle2(q):
 
-    def axis_angle2quaternion(self, axis_angle):
+        """
+        q: (..., 4)  in (x, y, z, w)
+        returns: (..., 3) axis-angle
+        """
+
+        # Ensure normalized quaternion
+        q = q / (q.norm(dim=-1, keepdim=True) + 1e-8)
+
+        x, y, z, w = q.unbind(-1)
+
+        angle = 2 * torch.atan2(torch.sqrt(x*x + y*y + z*z), w)
+        axis = torch.stack([x, y, z], dim=-1)
+        axis_norm = axis.norm(dim=-1, keepdim=True) + 1e-8
+        axis = axis / axis_norm
+
+        # Fix sign ambiguity: enforce SciPy-like convention: angle ∈ [-π, π]
+        angle = ((angle + torch.pi) % (2 * torch.pi)) - torch.pi
+
+        return axis * angle.unsqueeze(-1)
+
+    @staticmethod
+    def axis_angle2quaternion(axis_angle):
         
         """
         Convert axis-angle representation(s) to quaternion using SciPy.
@@ -148,6 +171,23 @@ class CustomTransforms():
         r = R.from_rotvec(aa_np)
         q_np = r.as_quat()  # returns (x, y, z, w)
         return torch.from_numpy(q_np).to(axis_angle.device, dtype=axis_angle.dtype)
+    
+    @staticmethod
+    def axis_angle2quaternion2(aa):
+
+        """
+        aa: (..., 3) axis * angle
+        returns (..., 4) quaternion (x, y, z, w)
+        """
+
+        angle = torch.norm(aa, dim=-1, keepdim=True) + 1e-8
+        axis = aa / angle
+
+        half = angle * 0.5
+        w = torch.cos(half)
+        xyz = axis * torch.sin(half)
+
+        return torch.cat([xyz, w], dim=-1)
 
     def transform(self, sample):
         
@@ -185,36 +225,27 @@ class CustomTransforms():
                     v[..., self.state_slices["q"]],
                     joint_vel_aug,
                     joint_torque_aug,
-                    gripper_disc,
-                    v[..., self.state_slices["ext_force"]],
                     v[..., self.state_slices["ee_pos"]],
-                    aa_orientation
+                    aa_orientation,
+                    gripper_disc,
+                    v[..., self.state_slices["ext_force"]]                    
                 ], dim=-1)
 
                 sample[k] = v_new
 
             # action
             if k in self.feature_groups["ACTION"]:
-                
-                # print("1: ", v.shape)
-                # print("2: ", self.N_history)
-                # print("3: ", self.N_chunk)
 
                 v = v.to(torch.float32) # convert data to tensor float32
                 past_actions = v[:self.N_history, :]
                 future_actions = v[self.N_history:, :]
                 sample[k] = future_actions
-  
-                # print("4: ", future_actions.shape)
-                # print("5: ", past_actions.shape)
 
         # append past actions to state
         state_ft_name = self.feature_groups["STATE"][0]
-        # print("6: ", sample[state_ft_name].shape)
         sample[state_ft_name] = torch.cat([
             sample[state_ft_name],
             past_actions,
         ], dim=-1)
-        # print("7: ", sample[state_ft_name].shape)
 
         return sample

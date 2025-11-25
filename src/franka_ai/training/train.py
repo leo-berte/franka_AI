@@ -20,7 +20,7 @@ from franka_ai.dataset.utils import get_configs_dataset, load_episodes_stats_pat
 from franka_ai.training.utils import *
 
 """
-Run the code: python src/franka_ai/training/train.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today 
+Run the code: python src/franka_ai/training/train.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
                                                      --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints
                                                      --policy ACT
 Activate tensorboard: (from where there is this code): python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/tensorboard
@@ -103,7 +103,7 @@ def train():
         seed_everything(seed_val)
 
     # Prepare transforms for training, inference and for computing dataset stats
-    transforms_train = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=True)
+    transforms_train = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=False) # train=True to enable data augmentation
     transforms_val = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=False)
 
     # Create loaders
@@ -142,7 +142,7 @@ def train():
         print(f"Loaded pretrained policy from {pretrained_path}")
     else:
         # Get episodes stats
-        episode_stats_path = Path(dataset_path) / "meta" / "episodes_stats_transformed.jsonl" # episodes_stats_transformed
+        episode_stats_path = Path(dataset_path) / "meta" / "episodes_stats_transformed.jsonl"
         episodes_stats = load_episodes_stats_patch(episode_stats_path)
         # Aggregate episodes stats in a unique global stats
         new_dataset_stats = aggregate_stats([episodes_stats[ep] for ep in train_ep])
