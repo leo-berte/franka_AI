@@ -8,7 +8,10 @@ from franka_ai.dataset.load_dataset import make_dataloader
 from franka_ai.dataset.utils import get_configs_dataset, benchmark_loader, benchmark_loader2
 
 """
-Run the code: python src/franka_ai/tests/test_dataloader.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
+Run the code: 
+
+python src/franka_ai/tests/test_dataloader.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
+python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/today_data/today_outliers
 
 Visualize lerobot dataset uploaded in HF:
 
@@ -18,6 +21,7 @@ Visualize custom dataset saved locally:
 
 python -m lerobot.scripts.visualize_dataset --repo-id today_outliers --root /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers --episode-index 0
 """
+
 
 # TODO: 
 # 1) dataloader profiler based on transforms ON/OFF and dataloader params

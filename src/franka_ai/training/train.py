@@ -20,15 +20,25 @@ from franka_ai.dataset.utils import get_configs_dataset, load_episodes_stats_pat
 from franka_ai.training.utils import *
 
 """
-Run the code: python src/franka_ai/training/train.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
+Run the code: 
+
+python src/franka_ai/training/train.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
                                                      --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints
                                                      --policy ACT
-Activate tensorboard: (from where there is this code): python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/tensorboard
+
+python src/franka_ai/training/train.py --dataset /workspace/data/today_data/today_outliers
+                                       --pretrained /workspace/outputs/checkpoints
+                                       --policy ACT
+
+Activate tensorboard (from where there is this code): 
+
+python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/tensorboard
 """
 
 
 # TODO:
-# Optimize training (see notes)
+# 1) Optimize training (see notes)
+# 2) Add ACT, DP, Mine policyFactory
 
 
 def parse_args():
@@ -169,6 +179,8 @@ def train():
     running_grad_norm_sum = 0.0
     best_val_loss = float("inf")
     avg_val_loss = float("inf")
+
+    print("Starting training loop...")
 
     while not done:
 

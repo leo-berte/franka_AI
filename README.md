@@ -7,59 +7,46 @@ https://github.com/huggingface/lerobot/blob/790d6740babad57398e20a956a23068d3776
 ### 1.1 Folder structure
 
 ```bash
-franka_AI_/
-│
-├── README.md
-├── environment.yml               # Conda environment (opzionale se vuoi anche pip)
-│
+franka_ai/
 ├── configs/
-│   ├── train_vla.yaml
-│   ├── eval_bc.yaml
-│   └── model_arch.yaml           # Configurazioni per modelli e dataset
-│
-├── data/
-│   ├── lerobot_datasets/
-│   │   └── softbag_pickplace/    # (symlink o path ai dati reali)
-│   └── processed/                # Versioni preprocessate
-│
+├── dataset/
+├── outputs/
 ├── src/
-│   ├── __init__.py
-│   │
-│   ├── datasets/
-│   │   ├── __init__.py
-│   │   ├── lerobot_loader.py     # Wrapper per caricare dataset lerobot
-│   │   └── transforms.py         # Preprocessing, augmentations, ecc.
-│   │
-│   ├── models/
-│   │   ├── __init__.py
-│   │   ├── policy_bc.py          # Behaviour cloning baseline
-│   │   ├── policy_vla.py         # Vision-Language-Action architecture
-│   │   ├── encoders/
-│   │   │   ├── clip_encoder.py
-│   │   │   ├── mae_encoder.py
-│   │   │   └── proprio_encoder.py
-│   │   └── decoders/
-│   │       └── action_decoder.py
-│   │
-│   ├── training/
-│   │   ├── train.py              # Main training loop
-│   │   ├── losses.py
-│   │   ├── metrics.py
-│   │   └── utils.py
-│   │
-│   ├── inference/
-│   │   ├── run_policy.py         # Script per testare in simulazione o real
-│   │   └── visualizations.py
-│   │
-│   ├── control/
-│   │   ├── franka_interface.py   # API verso robot reale o simulator (es. pybullet, ROS2)
-│   │   └── grasping.py
-│   │
-│   ├── utils/
-│       ├── logger.py             # WandB, tensorboard, ecc.
-        ├── seed.py
-        └── config.py             # Parser YAML → dict
+│   └── franka_ai/
+│       ├── dataset/
+│       ├── training/
+│       ├── inference/
+│       ├── models/
+│       ├── utils/
+│       └── tests/
+├── ros2/
+│   └── franka_ai_inference/
+│       ├── package.xml
+│       ├── CMakeLists.txt
+│       ├── launch/
+│       └── src/inference_node.py
+├── Dockerfile.train
+├── Dockerfile.ros
+└── README.md
 ```
+
+
+
+docker build -t franka_ai -f Dockerfile.train .
+sh docker_run_train.sh
+
+
+https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+python -c "import torch; print(torch.cuda.is_available())"
+
+
+
+
+
+
+
+
+
 
 ### 1.2 Setup conda environment and run the code
 

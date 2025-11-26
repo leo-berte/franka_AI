@@ -13,7 +13,10 @@ from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.utils import get_configs_dataset, build_delta_timestamps, LeRobotDatasetPatch
 
 """
-Run the code: python src/franka_ai/dataset/generate_updated_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
+Run the code: 
+
+python src/franka_ai/dataset/generate_updated_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
+python src/franka_ai/dataset/generate_updated_stats.py --dataset /workspace/data/today_data/today_outliers
 """
 
 # TODO:

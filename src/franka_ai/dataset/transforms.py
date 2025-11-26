@@ -1,4 +1,3 @@
-from scipy.spatial.transform import Rotation as R
 import kornia.augmentation as K
 import torchvision.transforms as T
 import torch
@@ -123,20 +122,6 @@ class CustomTransforms():
 
     @staticmethod
     def quaternion2axis_angle(q):
-    
-        """
-        Convert quaternion(s) to axis-angle representation using SciPy.
-        q: (..., 4) tensor with format (x, y, z, w)
-        returns: (..., 3) tensor with axis-angle representation
-        """
-
-        q_np = q.detach().cpu().numpy()
-        r = R.from_quat(q_np)
-        aa = r.as_rotvec()  # returns axis * angle, shape (..., 3)   
-        return torch.from_numpy(aa).to(q.device, dtype=q.dtype)
-    
-    @staticmethod
-    def quaternion2axis_angle2(q):
 
         """
         q: (..., 4)  in (x, y, z, w)
@@ -157,23 +142,9 @@ class CustomTransforms():
         angle = ((angle + torch.pi) % (2 * torch.pi)) - torch.pi
 
         return axis * angle.unsqueeze(-1)
-
-    @staticmethod
-    def axis_angle2quaternion(axis_angle):
-        
-        """
-        Convert axis-angle representation(s) to quaternion using SciPy.
-        axis_angle: (..., 3) tensor representing axis-angle
-        returns: (..., 4) tensor with format (w, x, y, z)
-        """
-
-        aa_np = axis_angle.detach().cpu().numpy()
-        r = R.from_rotvec(aa_np)
-        q_np = r.as_quat()  # returns (x, y, z, w)
-        return torch.from_numpy(q_np).to(axis_angle.device, dtype=axis_angle.dtype)
     
     @staticmethod
-    def axis_angle2quaternion2(aa):
+    def axis_angle2quaternion(aa):
 
         """
         aa: (..., 3) axis * angle
