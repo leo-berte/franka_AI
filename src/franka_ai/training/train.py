@@ -189,10 +189,10 @@ def train():
             # Sart timer
             step_start = time.perf_counter()
 
-            # ove data to device
+            # Move data to device
             batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
 
-            # computes the loss (and optionally predictions)
+            # Computes the loss (and optionally predictions)
             loss, _ = policy.forward(batch)
 
             loss.backward() # compute gradients

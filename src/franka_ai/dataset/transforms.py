@@ -9,8 +9,6 @@ import numpy as np
 
 # 2) check rviz depth
 
-
-
 # 1) add relative vs absolute cart pose as actions/state
 
 # 1) Check values resize, bright, ..
@@ -50,19 +48,21 @@ class CustomTransforms():
         self.N_history = dataloader_cfg["N_history"]
         self.N_chunk = dataloader_cfg["N_chunk"]
 
-        # image resize
-        self.img_resize = transforms_cfg["img_resize"]
-
-        # noise stds
-        noise = transforms_cfg["noise_std_dev"]
-        self.joint_pos_std_dev = noise["joint_pos"]
+        # state noise stds
+        noise = transforms_cfg["state"]["noise_std_dev"]
         self.joint_vel_std_dev = noise["joint_vel"]
         self.joint_torque_std_dev = noise["joint_torque"]
-        self.cart_position_std_dev = noise["cart_position"]
-        self.cart_orientation_std_dev = noise["cart_orientation"]
+
+        # state transforms
+        self.use_axis_angle = transforms_cfg["state"]["use_axis_angle"]
+        self.use_past_actions = transforms_cfg["state"]["use_past_actions"]
+        self.use_fext = transforms_cfg["state"]["use_fext"]
+
+        # image resize
+        self.img_resize = transforms_cfg["image"]["resize"]
 
         # image augmentations
-        aug_cfg = transforms_cfg["augmentations"]
+        aug_cfg = transforms_cfg["image"]["augmentations"]
         
         # convert img to [0,1] + resize (both training and inference)
         base_tf_pre = torch.nn.Sequential(
@@ -98,24 +98,14 @@ class CustomTransforms():
         # define full pipeline for both training and inference
         self.img_tf_inference = torch.nn.Sequential(base_tf_pre)
         self.img_tf_train = torch.nn.Sequential(base_tf_pre, train_tf)
-    
-    def joint_pos_transforms(self, v):
-        noise = torch.randn_like(v[:1,:]) * self.joint_pos_std_dev # v: (N_h, D) (history) → noise: (1, D)
-        return v + noise
-    
+
     def joint_vel_transforms(self, v):
-        noise = torch.randn_like(v[:1,:]) * self.joint_vel_std_dev
+        noise = torch.randn_like(v[:1,:]) * self.joint_vel_std_dev # v: (N_h, D) (history) → noise: (1, D)
         return v + noise
     
     def joint_torque_transforms(self, v):
         noise = torch.randn_like(v[:1,:]) * self.joint_torque_std_dev
         return v + noise
-    
-    def curr_cart_position_transforms(self, v):
-        pass
-    
-    def curr_cart_orientation_transforms(self, v):
-        pass
 
     def gripper_continuous2discrete(self, value, gripper_half_width=0.037):
         return (value > gripper_half_width).float() # returns 0 (closed) or 1 (open)
@@ -164,13 +154,11 @@ class CustomTransforms():
         
         for k, v in sample.items(): # each sample contains the N_h dimension (but no B dimension)
             
-            # images
             if k in self.feature_groups["VISUAL"]:
-
+                
                 v = v.to(torch.float32) # convert data to tensor float32
                 sample[k] = self.img_tf_train(v) if self.train else self.img_tf_inference(v)
 
-            # state
             if k in self.feature_groups["STATE"]:
 
                 v = v.to(torch.float32) # convert data to tensor float32
@@ -187,36 +175,45 @@ class CustomTransforms():
                 gripper_cont = v[..., self.state_slices["gripper"]]
                 gripper_disc = self.gripper_continuous2discrete(gripper_cont)
                 
-                # convert orientation to axis-angle
+                # convert orientation
                 q_orientation = v[..., self.state_slices["ee_quaternion"]]
-                aa_orientation = self.quaternion2axis_angle(q_orientation)
+                orientation = self.quaternion2axis_angle(q_orientation) if self.use_axis_angle else q_orientation
 
                 # rebuild state vector
-                v_new = torch.cat([
+                state_parts = [
                     v[..., self.state_slices["q"]],
                     joint_vel_aug,
                     joint_torque_aug,
                     v[..., self.state_slices["ee_pos"]],
-                    aa_orientation,
-                    gripper_disc,
-                    v[..., self.state_slices["ext_force"]]                    
-                ], dim=-1)
+                    orientation,
+                    gripper_disc
+                ]
+
+                # use external force
+                if self.use_fext:
+                    state_parts.append(v[..., self.state_slices["ext_force"]])
+
+                v_new = torch.cat(state_parts, dim=-1)
 
                 sample[k] = v_new
 
-            # action
             if k in self.feature_groups["ACTION"]:
 
                 v = v.to(torch.float32) # convert data to tensor float32
-                past_actions = v[:self.N_history, :]
-                future_actions = v[self.N_history:, :]
-                sample[k] = future_actions
 
-        # append past actions to state
-        state_ft_name = self.feature_groups["STATE"][0]
-        sample[state_ft_name] = torch.cat([
-            sample[state_ft_name],
-            past_actions,
-        ], dim=-1)
+                if self.use_past_actions:
+                    past_actions = v[:self.N_history, :]
+
+                if (self.train):
+                    future_actions = v[self.N_history:, :]
+                    sample[k] = future_actions
+
+        # append past actions to state if requested
+        if self.use_past_actions:
+            state_ft_name = self.feature_groups["STATE"][0]
+            sample[state_ft_name] = torch.cat([
+                sample[state_ft_name],
+                past_actions,
+            ], dim=-1)
 
         return sample

@@ -87,7 +87,7 @@ def get_configs_dataset(config_rel_path):
     # extract sections
     dataset_cfg = cfg["dataset"]
     dataloader_cfg = cfg["dataloader"]
-    transforms_cfg = cfg["transformations"]
+    transforms_cfg = cfg["transforms"]
 
     return dataloader_cfg, dataset_cfg, transforms_cfg
 
