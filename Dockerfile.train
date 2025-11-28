@@ -15,8 +15,10 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 # Create workspace
 WORKDIR /workspace
 
-# Copy the project
-COPY . /workspace
+# Copy only franka_ai library + configs + setup.py
+COPY setup.py /workspace/
+COPY configs/ /workspace/configs/
+COPY src/franka_ai/ /workspace/src/franka_ai/
 
 # Install Python deps
 RUN pip install --upgrade pip setuptools wheel
@@ -28,10 +30,7 @@ RUN pip install git+https://github.com/huggingface/lerobot.git@790d6740babad5739
 RUN pip install --force-reinstall "datasets==3.6.0"
 RUN pip install "pymunk<6.3.0"
 RUN pip install rerun-sdk==0.14
-RUN pip install scipy
-RUN pip install kornia
-RUN pip install matplotlib
-RUN pip install tensorboard
+RUN pip3 install scipy kornia matplotlib tensorboard
 
 # Install package in editable mode
 RUN pip install -e .

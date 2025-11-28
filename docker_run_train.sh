@@ -9,6 +9,9 @@ docker run -it --rm \
     -e DISPLAY=$DISPLAY \
     -e QT_X11_NO_MITSHM=1 \
     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-    -v $(pwd):/workspace \
+    -v $(pwd)/src/franka_ai:/workspace/src/franka_ai \
+    -v $(pwd)/configs:/workspace/configs \
+    -v $(pwd)/setup.py:/workspace/setup.py \
+    -v $(pwd)/data:/workspace/data \
     -w /workspace \
     franka_ai_train

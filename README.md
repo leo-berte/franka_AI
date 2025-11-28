@@ -51,7 +51,7 @@ Enter in the container by accessing the new *franka_ai_train* image:
 sh docker_run_train.sh
 ```
 
-### 1.3 Setup docker for inference (**NOT READY YET**)
+### 1.3 Setup docker for inference
 
 Clone repo and go inside folder:
 
@@ -122,7 +122,18 @@ python src/franka_ai/training/train.py --dataset /workspace/data/today_data/toda
 
 ## 3. Run inference scripts
 
-TODO
+Once inside the container, you can execute the inference node:
+
+```bash
+ros2 run franka_ai_inference inference_node
+```
+
+Every time a new modification is done in the mounted inference_node.py, you need to run:
+
+```bash
+colcon build
+source install/setup.bash
+```
 
 ## 4. Known issues
 

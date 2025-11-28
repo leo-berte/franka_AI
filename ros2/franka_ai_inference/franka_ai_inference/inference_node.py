@@ -7,7 +7,7 @@ from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import WrenchStamped, PoseStamped
-from franka_msgs.msg import GripperWidth
+from custom_msgs.msg import GripperWidth
 
 from cv_bridge import CvBridge
 from collections import deque
@@ -20,12 +20,13 @@ from franka_ai.dataset.utils import get_configs_dataset
 
 
 # TODO:
-# 1) path checkpoint from argparse o launcher
-# 2) se uso 2 repo, devo dare percorso assoluto per: get_configs_dataset("configs/dataset.yaml")
+# 1) path checkpoint from argparse o launcher --> dove metto yaml?
+
 # 3) check append di past actions
-# import gripper custom
-# uso filtered o output diretto della policy?
 # build timestamp
+
+# uso filtered o output diretto della policy?
+
 # capire se output è traiettoria di azioni e come pubblicarla
 # traj stitching
 
