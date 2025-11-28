@@ -11,4 +11,4 @@ docker run -it --rm \
     -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
     -v $(pwd):/workspace \
     -w /workspace \
-    franka_ai
+    franka_ai_train
