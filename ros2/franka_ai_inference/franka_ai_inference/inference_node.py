@@ -11,6 +11,7 @@ from custom_msgs.msg import GripperWidth
 
 from cv_bridge import CvBridge
 from collections import deque
+import threading
 import torch
 
 from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
@@ -23,7 +24,6 @@ from franka_ai.inference.utils import get_configs_inference
 
 # TODO:
 
-# usare semafori per bloccare callbacks durante inference
 # 3) check append di past actions
 # build timestamp
 
@@ -50,14 +50,12 @@ class FrankaInference(Node):
         self.device = dataloader_cfg["device"]
         self.N_history = dataloader_cfg["N_history"]
         self.N_chunk = dataloader_cfg["N_chunk"]
+        self.fps_sampling_hist  = dataloader_cfg["fps_sampling_hist"]
+        self.fps_sampling_chunk = dataloader_cfg["fps_sampling_chunk"]
 
         # Get parameter values from inference.yaml
         self.policy_rate = inference_cfg["policy_rate"]
         pretrained_policy_path = inference_cfg["pretrained_policy_path"]
-
-        # # Get dataset state composition via indeces 
-        # state_ranges = dataset_cfg["state_slices"]
-        # self.state_slices = {k: slice(v[0], v[1]) for k, v in state_ranges.items()}
 
         # Prepare transforms for inference
         self.tf_inference = CustomTransforms(
@@ -69,6 +67,9 @@ class FrankaInference(Node):
 
         # Setup cv2 bridge
         self.bridge = CvBridge()
+        
+        # Protect shared data from concurrent access
+        self.buffer_lock = threading.Lock()
 
         # deque
         self.webcam1_buffer = deque(maxlen=self.N_history)
@@ -84,7 +85,7 @@ class FrankaInference(Node):
         self.cart_pos_curr_buffer = deque(maxlen=self.N_history) 
         self.cart_quat_curr_buffer = deque(maxlen=self.N_history)
         # self.cart_pos_filtered_command_buffer = deque(maxlen=self.N_history)
-        # self.cart_quat_filtered_command_buffer = deque(maxlen=self.N_history)
+        # self.cart_ori_filtered_command_buffer = deque(maxlen=self.N_history)
         # self.gripper_command_buffer = deque(maxlen=self.N_history)
         self.action_buffer = deque(maxlen=self.N_history)
 
@@ -97,12 +98,12 @@ class FrankaInference(Node):
         self.joint_state_sub = self.create_subscription(JointState, '/cartesian_impedance/joint_state', self.joint_state_callback, 10)
         self.gripper_state_sub = self.create_subscription(GripperWidth, '/panda_gripper/width', self.gripper_state_callback, 10)
         self.fext_sub = self.create_subscription(WrenchStamped, '/cartesian_impedance/f_ext_cart', self.fext_callback, 10)
-        self.cart_pos_curr_sub = self.create_subscription(PoseStamped, '/cartesian_impedance/cartesian_pos_curr', self.cart_pos_curr_callback, 10)
-        # self.cart_pos_filtered_action_sub = self.create_subscription(PoseStamped, '/cartesian_impedance/cartesian_pos_des_filt', self.cart_pos_filtered_action_callback, 10)
+        self.cart_pose_curr_sub = self.create_subscription(PoseStamped, '/cartesian_impedance/cartesian_pos_curr', self.cart_pose_curr_callback, 10)
+        # self.cart_pose_filtered_action_sub = self.create_subscription(PoseStamped, '/cartesian_impedance/cartesian_pos_des_filt', self.cart_pose_filtered_action_callback, 10)
         # self.gripper_action_sub = self.create_subscription(GripperWidth, '/panda_gripper/gripper_command', self.gripper_action_callback, 10)
         
         # Publisher
-        self.cart_pos_action_pub = self.create_publisher(PoseStamped, '/cartesian_impedance/equilibrium_pose', 10)
+        self.cart_pose_action_pub = self.create_publisher(PoseStamped, '/cartesian_impedance/equilibrium_pose', 10)
         self.gripper_action_pub = self.create_publisher(GripperWidth, '/panda_gripper/gripper_command', 10)
 
         # Timer according to framerate
@@ -122,25 +123,29 @@ class FrankaInference(Node):
 
         rgb = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='rgb8') # convert to RGB to match dataset format
         rgb = rgb.astype('float32') / 255.0  # convert to float32 and normalize [0, 1]
-        self.webcam1_buffer.append((msg.header.stamp, rgb))
+        with self.buffer_lock:
+            self.webcam1_buffer.append((msg.header.stamp, rgb))
 
     def webcam2_callback(self, msg):
 
         rgb = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='rgb8') # convert to RGB to match dataset format
         rgb = rgb.astype('float32') / 255.0  # convert to float32 and normalize [0, 1]
-        self.webcam1_buffer.append((msg.header.stamp, rgb))
+        with self.buffer_lock:
+            self.webcam2_buffer.append((msg.header.stamp, rgb))
 
     def webcam3_callback(self, msg):
 
         rgb = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='rgb8') # convert to RGB to match dataset format
         rgb = rgb.astype('float32') / 255.0  # convert to float32 and normalize [0, 1]
-        self.webcam1_buffer.append((msg.header.stamp, rgb))
+        with self.buffer_lock:
+            self.webcam3_buffer.append((msg.header.stamp, rgb))
 
     def realsense_rgb_callback(self, msg):
 
         rgb = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='rgb8') # convert to RGB to match dataset format
         rgb = rgb.astype('float32') / 255.0  # convert to float32 and normalize [0, 1]
-        self.webcam1_buffer.append((msg.header.stamp, rgb))
+        with self.buffer_lock:
+            self.realsense_rgb_buffer.append((msg.header.stamp, rgb))
 
     def realsense_depth_callback(self, msg):
         pass
@@ -148,14 +153,16 @@ class FrankaInference(Node):
     def joint_state_callback(self, msg):
 
         # Joint positions, velocities, efforts
-        self.q_buffer.append((msg.header.stamp, list(msg.position)))
-        self.qdot_buffer.append((msg.header.stamp, list(msg.velocity)))
-        self.tau_buffer.append((msg.header.stamp, list(msg.effort)))
+        with self.buffer_lock:
+            self.q_buffer.append((msg.header.stamp, list(msg.position)))
+            self.qdot_buffer.append((msg.header.stamp, list(msg.velocity)))
+            self.tau_buffer.append((msg.header.stamp, list(msg.effort)))
 
     def gripper_state_callback(self, msg):
         
         # Gripper width
-        self.gripper_state_buffer.append((msg.header.stamp, msg.width))
+        with self.buffer_lock:
+            self.gripper_state_buffer.append((msg.header.stamp, msg.width))
 
     def fext_callback(self, msg):
 
@@ -167,9 +174,10 @@ class FrankaInference(Node):
         ty = msg.wrench.torque.y
         tz = msg.wrench.torque.z
 
-        self.fext_buffer.append((msg.header.stamp, [fx, fy, fz, tx, ty, tz]))
+        with self.buffer_lock:
+            self.fext_buffer.append((msg.header.stamp, [fx, fy, fz, tx, ty, tz]))
 
-    def cart_pos_curr_callback(self, msg):
+    def cart_pose_curr_callback(self, msg):
 
         # Cart pose
         px = msg.pose.position.x
@@ -180,8 +188,9 @@ class FrankaInference(Node):
         qz = msg.pose.orientation.z
         qw = msg.pose.orientation.w
 
-        self.cart_pos_curr_buffer.append((msg.header.stamp, [px, py, pz]))
-        self.cart_ori_curr_buffer.append((msg.header.stamp, [qx, qy, qz, qw]))
+        with self.buffer_lock:
+            self.cart_pos_curr_buffer.append((msg.header.stamp, [px, py, pz]))
+            self.cart_quat_curr_buffer.append((msg.header.stamp, [qx, qy, qz, qw]))
 
     def ready(self):
         return (
@@ -254,19 +263,34 @@ class FrankaInference(Node):
 
     def build_obs(self):
         
+        # Make a snapshot copy inside lock
+        with self.buffer_lock:
+            webcam1_buffer_copy = list(self.webcam1_buffer)
+            webcam2_buffer_copy = list(self.webcam2_buffer)
+            webcam3_buffer_copy = list(self.webcam3_buffer)
+            realsense_rgb_buffer_copy = list(self.realsense_rgb_buffer)
+            q_buffer_copy = list(self.q_buffer)
+            qdot_buffer_copy = list(self.qdot_buffer)
+            tau_buffer_copy = list(self.tau_buffer)
+            gripper_state_buffer_copy = list(self.gripper_state_buffer)
+            fext_buffer_copy = list(self.fext_buffer)
+            cart_pos_curr_buffer_copy = list(self.cart_pos_curr_buffer)
+            cart_quat_curr_buffer_copy = list(self.cart_quat_curr_buffer)
+            action_buffer_copy = list(self.action_buffer)
+
         # Convert data to tensors and create history
-        webcam1 = self.stack_data(self.webcam1_buffer, is_image=True)
-        webcam2 = self.stack_data(self.webcam2_buffer, is_image=True)
-        webcam3 = self.stack_data(self.webcam3_buffer, is_image=True)
-        realsense_rgb = self.stack_data(self.realsense_rgb_buffer, is_image=True)
-        q = self.stack_data(self.q_buffer)
-        qdot = self.stack_data(self.qdot_buffer)
-        tau = self.stack_data(self.tau_buffer)
-        gripper_state = self.stack_data(self.gripper_state_buffer)
-        fext = self.stack_data(self.fext_buffer)
-        cart_pos_curr = self.stack_data(self.cart_pos_curr_buffer)
-        cart_quat_curr = self.stack_data(self.cart_quat_curr_buffer)
-        action = self.stack_data(self.action_buffer)
+        webcam1 = self.stack_data(webcam1_buffer_copy, is_image=True)
+        webcam2 = self.stack_data(webcam2_buffer_copy, is_image=True)
+        webcam3 = self.stack_data(webcam3_buffer_copy, is_image=True)
+        realsense_rgb = self.stack_data(realsense_rgb_buffer_copy, is_image=True)
+        q = self.stack_data(q_buffer_copy)
+        qdot = self.stack_data(qdot_buffer_copy)
+        tau = self.stack_data(tau_buffer_copy)
+        gripper_state = self.stack_data(gripper_state_buffer_copy)
+        fext = self.stack_data(fext_buffer_copy)
+        cart_pos_curr = self.stack_data(cart_pos_curr_buffer_copy)
+        cart_quat_curr = self.stack_data(cart_quat_curr_buffer_copy)
+        action = self.stack_data(action_buffer_copy)
 
         # Rebuild state vector (N_hist, D)
         state = torch.cat([
@@ -327,10 +351,13 @@ class FrankaInference(Node):
         # Convert axis-angle to quaternion
         quat = CustomTransforms.axis_angle2quaternion2(numpy_action[3:7])
 
-        # Save action in buffer
+        # Get action
         action = numpy_action[:3] + quat + numpy_action[-1]
-        self.action_buffer.append((self.get_clock().now().to_msg(), action))
-        # self.action_buffer.append((self.get_clock().now().nanoseconds, action)) 
+
+        # Save action in buffer safely
+        with self.buffer_lock:
+            self.action_buffer.append((self.get_clock().now().to_msg(), action))
+            # self.action_buffer.append((self.get_clock().now().nanoseconds, action)) 
 
         # Set cart pose action
         cart_msg = PoseStamped()
@@ -344,7 +371,7 @@ class FrankaInference(Node):
         cart_msg.pose.orientation.w = float(quat[3])
 
         # Publish
-        self.cart_pos_action_pub.publish(cart_msg)
+        self.cart_pose_action_pub.publish(cart_msg)
 
         # Set gripper action
         gripper_msg = GripperWidth()

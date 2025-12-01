@@ -8,7 +8,7 @@ import os
 
 from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
 
-from franka_ai.inference.utils import setup_folder
+from franka_ai.inference.utils import setup_eval_folder
 
 # Reproducibility
 SEED=42
@@ -22,6 +22,9 @@ Run the code: python src/franka_ai/inference/evaluate.py
 # 0) define metrics to measure how much inference code is efficient (measure time, memory, ..)
 
 
+
+
+
 def evaluate():
 
     """
@@ -31,15 +34,19 @@ def evaluate():
     """
 
     # Get folder to save eval video
-    eval_dir = setup_folder()
+    eval_dir = setup_eval_folder()
 
     # Parameters
-    device = "cuda"
+    device = "cuda"  
 
     # Base folder for all experiments
     base_output_dir = os.path.join(os.getcwd())
-    pretrained_policy_path = os.path.join(base_output_dir, "outputs", "checkpoints", "2025-11-07_16-30-45", "best_model.pt")
+    pretrained_policy_path = os.path.join(base_output_dir, "outputs", "checkpoints", "today_outliers_DP_2025-12-01_14-28-57", "best_model.pt") # SI, allenato da conda
+    pretrained_policy_path = os.path.join(base_output_dir, "outputs", "checkpoints", "today_outliers_DP_2025-12-01_13-38-23", "best_model.pt") # NO, allenato da docker
     print(pretrained_policy_path)
+
+    # --> not working even with: leonardo@leonardo-Precision-5490:~/Documents/Coding/franka_AI/outputs$ sudo chown -R $USER:$USER checkpoints/
+
 
     # Load policy
     policy = DiffusionPolicy.from_pretrained(pretrained_policy_path)

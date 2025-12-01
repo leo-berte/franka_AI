@@ -186,6 +186,23 @@ def train():
 
     print("Starting training loop...")
 
+
+
+
+    # # Save checkpoint
+    # ckpt_path = os.path.join(checkpoints_dir, f"step_{step:08d}.pt")
+    # # torch.save(policy.state_dict(), ckpt_path)
+    # policy.save_pretrained(ckpt_path)
+
+    # done = True
+
+
+
+
+
+
+
+
     while not done:
 
         for batch in train_loader:

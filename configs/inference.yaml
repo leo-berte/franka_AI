@@ -4,7 +4,8 @@
 
 inference:
 
-  pretrained_policy_path: "/workspace/outputs/checkpoints/today_outliers_DP_2025-11-26_11-54-34/best_model.pt"
+  pretrained_policy_path: "/workspace/outputs/checkpoints/today_outliers_DP_2025-12-01_14-28-57/best_model.pt"
   # dataset_configs_path: "../workspace/configs/dataset.yaml" # --> maybe I take this file directly from checkpoint folder?
   # train_configs_path: "../workspace/configs/train.yaml" # --> maybe I take this file directly from checkpoint folder?
   policy_rate: 30.0
+
