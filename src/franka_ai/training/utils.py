@@ -8,7 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 from lerobot.configs.types import FeatureType, PolicyFeature, NormalizationMode
 
 
-def get_train_config(config_rel_path):
+def get_configs_training(config_rel_path):
 
     # set path
     path = os.path.join(os.getcwd(), config_rel_path)
@@ -22,7 +22,7 @@ def get_train_config(config_rel_path):
 
     return train_cfg, normalization_cfg
     
-def setup_folders(policy_type, dataset_path):
+def set_output_folders_train(policy_type, dataset_path):
 
     """Create timestamped output folder structure for training run."""
     

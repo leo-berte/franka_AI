@@ -13,5 +13,6 @@ docker run -it --rm \
     -v $(pwd)/configs:/workspace/configs \
     -v $(pwd)/setup.py:/workspace/setup.py \
     -v $(pwd)/data:/workspace/data \
+    -v $(pwd)/outputs:/workspace/outputs \
     -w /workspace \
     franka_ai_train

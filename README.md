@@ -135,6 +135,12 @@ colcon build
 source install/setup.bash
 ```
 
+Otherwise, you can just run the first time inside Docker the following:
+
+```bash
+colcon build --symlink-install --packages-select franka_ai_inference
+```
+
 ## 4. Known issues
 
 ## 5. References

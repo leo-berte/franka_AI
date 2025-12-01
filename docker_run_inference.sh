@@ -15,6 +15,7 @@ docker run -it --rm \
     -v $(pwd)/configs:/workspace/configs \
     -v $(pwd)/setup.py:/workspace/setup.py \
     -v $(pwd)/data:/workspace/data \
+    -v $(pwd)/outputs:/workspace/outputs \
     -v $(pwd)/ros2/franka_ai_inference:/ros2_ws/src/franka_ai_inference \
     -w /ros2_ws \
     franka_ai_inference

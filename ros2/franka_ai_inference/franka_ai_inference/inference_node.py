@@ -17,17 +17,20 @@ from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
 
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.utils import get_configs_dataset
+# from franka_ai.training.utils import get_configs_training
+from franka_ai.inference.utils import get_configs_inference
 
 
 # TODO:
-# 1) path checkpoint from argparse o launcher --> dove metto yaml?
 
+# usare semafori per bloccare callbacks durante inference
 # 3) check append di past actions
 # build timestamp
 
 # uso filtered o output diretto della policy?
 
 # capire se output è traiettoria di azioni e come pubblicarla
+
 # traj stitching
 
 
@@ -38,24 +41,23 @@ class FrankaInference(Node):
 
         super().__init__('FrankaInference')
 
-        # Declare ROS2 parameters with default values
-        self.declare_parameter('policy_rate', 30.0)
+        # Get configs about dataset, training, inference
+        dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset("../workspace/configs/dataset.yaml")
+        # _, normalization_cfg = get_configs_training("../workspace/configs/dataset.yaml")
+        inference_cfg = get_configs_inference("../workspace/configs/inference.yaml")
 
-        # Get parameter values
-        self.policy_rate = self.get_parameter('policy_rate').value
-        pretrained_policy_path = "/workspace/outputs/checkpoints/today_outliers_DP_2025-11-26_11-54-34/best_model.pt"
-
-        # Get configs about dataloader and dataset 
-        dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset("configs/dataset.yaml")
-
-        # Set yaml parameters
+        # Get parameter values from dataset.yaml
         self.device = dataloader_cfg["device"]
         self.N_history = dataloader_cfg["N_history"]
         self.N_chunk = dataloader_cfg["N_chunk"]
 
-        # Get dataset state composition via indeces 
-        state_ranges = dataset_cfg["state_slices"]
-        self.state_slices = {k: slice(v[0], v[1]) for k, v in state_ranges.items()}
+        # Get parameter values from inference.yaml
+        self.policy_rate = inference_cfg["policy_rate"]
+        pretrained_policy_path = inference_cfg["pretrained_policy_path"]
+
+        # # Get dataset state composition via indeces 
+        # state_ranges = dataset_cfg["state_slices"]
+        # self.state_slices = {k: slice(v[0], v[1]) for k, v in state_ranges.items()}
 
         # Prepare transforms for inference
         self.tf_inference = CustomTransforms(
@@ -139,6 +141,9 @@ class FrankaInference(Node):
         rgb = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='rgb8') # convert to RGB to match dataset format
         rgb = rgb.astype('float32') / 255.0  # convert to float32 and normalize [0, 1]
         self.webcam1_buffer.append((msg.header.stamp, rgb))
+
+    def realsense_depth_callback(self, msg):
+        pass
     
     def joint_state_callback(self, msg):
 

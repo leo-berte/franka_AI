@@ -157,7 +157,8 @@ class CustomTransforms():
             if k in self.feature_groups["VISUAL"]:
                 
                 v = v.to(torch.float32) # convert data to tensor float32
-                sample[k] = self.img_tf_train(v) if self.train else self.img_tf_inference(v)
+                # sample[k] = self.img_tf_train(v) if self.train else self.img_tf_inference(v)
+                self.img_tf_inference(v) # avoid always image augmentations for now
 
             if k in self.feature_groups["STATE"]:
 
@@ -204,9 +205,8 @@ class CustomTransforms():
                 if self.use_past_actions:
                     past_actions = v[:self.N_history, :]
 
-                if (self.train):
-                    future_actions = v[self.N_history:, :]
-                    sample[k] = future_actions
+                future_actions = v[self.N_history:, :]
+                sample[k] = future_actions
 
         # append past actions to state if requested
         if self.use_past_actions:

@@ -39,6 +39,7 @@ python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/ten
 # TODO:
 # 1) Optimize training (see notes)
 # 2) Add ACT, DP, Mine policyFactory
+# Handle correctly pre-training (i.e. I add Fext in input features for example)
 
 
 def parse_args():
@@ -80,10 +81,10 @@ def train():
 
     # Load configs
     dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset("configs/dataset.yaml")
-    train_cfg, normalization_cfg = get_train_config("configs/train.yaml")
+    train_cfg, normalization_cfg = get_configs_training("configs/train.yaml")
 
     # Get folders to save weights and tensorboard logs
-    checkpoints_dir, tensorboard_dir, tsbrd_writer = setup_folders(policy_type, dataset_path)
+    checkpoints_dir, tensorboard_dir, tsbrd_writer = set_output_folders_train(policy_type, dataset_path)
 
     # create CSV file to store training losses
     csv_path = os.path.join(checkpoints_dir, "loss_log.csv")
@@ -113,7 +114,7 @@ def train():
         seed_everything(seed_val)
 
     # Prepare transforms for training, inference and for computing dataset stats
-    transforms_train = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=False) # train=True to enable data augmentation
+    transforms_train = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=True) 
     transforms_val = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=False)
 
     # Create loaders
@@ -129,28 +130,31 @@ def train():
     # POLICY INITIALIZATION
     # ---------------------
 
-    # Get dataset input/output stats
-    features = dataset_to_policy_features_patch(train_loader, dataset_cfg["features"])
-    output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
-    input_features = {key: ft for key, ft in features.items() if ft.type is not FeatureType.ACTION}
-    print("New output_features: ", output_features)
-    print("New input_features: ", input_features)
-    
-    # Define normalization and unnormalization mode 
-    normalization_mapping = parse_normalization_mapping(normalization_cfg)
-
-    # Policies are initialized with a configuration class, in this case `DiffusionConfig`. 
-    cfg = DiffusionConfig(input_features=input_features, 
-                          output_features=output_features, 
-                          normalization_mapping=normalization_mapping,
-                          n_obs_steps=dataloader_cfg["N_history"],
-                          horizon=dataloader_cfg["N_chunk"])
-
     if pretrained_path:
+
         # Load from checkpoint
         policy = DiffusionPolicy.from_pretrained(pretrained_path)
         print(f"Loaded pretrained policy from {pretrained_path}")
+
     else:
+
+        # Get dataset input/output stats
+        features = dataset_to_policy_features_patch(train_loader, dataset_cfg["features"])
+        output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
+        input_features = {key: ft for key, ft in features.items() if ft.type is not FeatureType.ACTION}
+        print("New output_features: ", output_features)
+        print("New input_features: ", input_features)
+        
+        # Define normalization and unnormalization mode 
+        normalization_mapping = parse_normalization_mapping(normalization_cfg)
+
+        # Policies are initialized with a configuration class, in this case `DiffusionConfig`. 
+        cfg = DiffusionConfig(input_features=input_features, 
+                            output_features=output_features, 
+                            normalization_mapping=normalization_mapping,
+                            n_obs_steps=dataloader_cfg["N_history"],
+                            horizon=dataloader_cfg["N_chunk"])
+
         # Get episodes stats
         episode_stats_path = Path(dataset_path) / "meta" / "episodes_stats_transformed.jsonl"
         episodes_stats = load_episodes_stats_patch(episode_stats_path)
