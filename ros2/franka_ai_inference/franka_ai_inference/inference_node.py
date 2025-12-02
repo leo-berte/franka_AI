@@ -24,9 +24,6 @@ from franka_ai.inference.utils import get_configs_inference
 
 # TODO:
 
-# 3) check append di past actions
-# build timestamp
-
 # uso filtered o output diretto della policy?
 
 # capire se output è traiettoria di azioni e come pubblicarla

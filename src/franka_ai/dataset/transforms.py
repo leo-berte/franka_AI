@@ -7,7 +7,9 @@ import numpy as np
 
 # TODO: 
 
-# 2) check rviz depth
+# 1) check rviz depth
+# 2) check griper 0-1 chiuso - aperto
+
 
 # 1) add relative vs absolute cart pose as actions/state
 
@@ -43,6 +45,8 @@ class CustomTransforms():
         self.feature_groups = dataset_cfg["features"]
         state_ranges = dataset_cfg["state_slices"]
         self.state_slices = {k: slice(v[0], v[1]) for k, v in state_ranges.items()}
+        action_ranges = dataset_cfg["action_slices"]
+        self.action_slices = {k: slice(v[0], v[1]) for k, v in action_ranges.items()}
 
         # history and chunk sizes
         self.N_history = dataloader_cfg["N_history"]
@@ -158,7 +162,7 @@ class CustomTransforms():
                 
                 v = v.to(torch.float32) # convert data to tensor float32
                 # sample[k] = self.img_tf_train(v) if self.train else self.img_tf_inference(v)
-                self.img_tf_inference(v) # avoid always image augmentations for now
+                sample[k] = self.img_tf_inference(v) # avoid always image augmentations for now
 
             if k in self.feature_groups["STATE"]:
 
@@ -202,10 +206,24 @@ class CustomTransforms():
 
                 v = v.to(torch.float32) # convert data to tensor float32
 
-                if self.use_past_actions:
-                    past_actions = v[:self.N_history, :]
+                # convert orientation
+                q_orientation = v[..., self.action_slices["ee_quaternion"]]
+                orientation = self.quaternion2axis_angle(q_orientation) if self.use_axis_angle else q_orientation
 
-                future_actions = v[self.N_history:, :]
+                # convert to discrete gripper state (0.0 or 1.0)
+                gripper_cont = v[..., self.action_slices["gripper"]]
+                gripper_disc = self.gripper_continuous2discrete(gripper_cont)
+
+                v_new = torch.cat([
+                    v[..., self.action_slices["ee_pos"]],
+                    orientation,
+                    gripper_disc
+                ], dim=-1)
+
+                if self.use_past_actions:
+                    past_actions = v_new[:self.N_history, :]
+
+                future_actions = v_new[self.N_history:, :]
                 sample[k] = future_actions
 
         # append past actions to state if requested

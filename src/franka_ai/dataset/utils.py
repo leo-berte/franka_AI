@@ -11,7 +11,6 @@ from lerobot.configs.types import FeatureType
 
 # TODO: 
 # 1) Do I want images close to each others or far in time? 
-# 2) capire se devo usare N_chunk = 2 --> [0.0, 0.1] o [0.1, 0.2] ???
 
 
 class LeRobotDatasetPatch(LeRobotDataset):
@@ -36,6 +35,11 @@ def build_delta_timestamps(feature_groups, N_h, N_c, fps_dataset, fps_sampling_h
         fps_dataset: dataset original frame rate (frames per second).
         fps_sampling_hist: frame rate used to import history data (frames per second).
         fps_sampling_chunk: frame rate used to import chunk data (frames per second).
+
+    Example:
+        Obs history    (N_h=5)	[s(t=-4), s(t=-3), s(t=-2), s(t=-1), s(t=0)]
+        Action history (N_h=5)	[a(t=-5), a(t=-4), a(t=-3), a(t=-2), a(t=-1)]
+        Action chunk   (N_c=3)	[a(t=0), a(t=1), a(t=2)]
     """
 
     # consistency checks
@@ -49,29 +53,32 @@ def build_delta_timestamps(feature_groups, N_h, N_c, fps_dataset, fps_sampling_h
     step_hist = round(fps_dataset / fps_sampling_hist)
     step_chunk = round(fps_dataset / fps_sampling_chunk)
 
-    # history frames: [..., -2dt, -dt, 0]
-    history = [-(i * step_hist * dt_dataset) for i in range(N_h-1, -1, -1)]
+    # state history frames: [-(N_h-1)dt, ..., -2dt, -dt, 0]
+    state_history = [-(i * step_hist * dt_dataset) for i in range(N_h-1, -1, -1)]
 
-    # future frames: [dt, 2dt, ...]
-    chunk   = [(i * step_chunk * dt_dataset) for i in range(1, N_c+1)]
+    # action history frames: [-(N_h)dt, ..., -2dt, -dt, 0]
+    action_history = [-(i * step_chunk * dt_dataset) for i in range(N_h, 0, -1)]
+
+    # future frames: [0, dt, 2dt, ..., (N_c-1)dt]
+    chunk   = [(i * step_chunk * dt_dataset) for i in range(0, N_c)]
+
+    # Combine history + chunk to potentially extrapolate also past actions
+    full_actions = action_history + chunk
 
     # create dict
     delta_timestamps = {}
 
     # cameras
     for cam in feature_groups["VISUAL"]:
-        delta_timestamps[cam] = history
+        delta_timestamps[cam] = state_history
 
     # state
     for s in feature_groups["STATE"]:
-        delta_timestamps[s] = history
+        delta_timestamps[s] = state_history
 
     # actions
     for a in feature_groups["ACTION"]:
-        delta_timestamps[a] = history + chunk
-
-    # print(delta_timestamps["action"]) --> [-0.0, 0.033337900999492256]
-    # print(delta_timestamps["observation.state"]) -> [-0.0]
+        delta_timestamps[a] = full_actions
 
     return delta_timestamps
 

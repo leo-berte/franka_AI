@@ -52,6 +52,11 @@ dataset:
     gripper: [28, 29]
     ext_force: [29,35]
 
+  action_slices:
+    ee_pos: [0, 3]
+    ee_quaternion: [3, 7]
+    gripper: [7, 8]
+
 
 # ---------------
 # TRANSFORMATIONS
