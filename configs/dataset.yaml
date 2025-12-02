@@ -50,7 +50,7 @@ dataset:
     ee_pos: [21, 24]
     ee_quaternion: [24, 28]
     gripper: [28, 29]
-    ext_force: [29,35]
+    fext: [29,35]
 
   action_slices:
     ee_pos: [0, 3]
@@ -64,8 +64,8 @@ dataset:
 
 transforms:
 
-  image:
-    resize: [224, 224]
+  visual:
+    img_resize: [224, 224]
     normalize: false
     augmentations:
       color_jitter:
@@ -84,9 +84,24 @@ transforms:
         p: 0.5
 
   state:
-    noise_std_dev:
-      joint_vel: 0.002        # σ ≈ 0.02 rad/s
-      joint_torque: 0.002     # σ ≈ 0.02 Nm
+    augmentations:
+      noise_std_dev:
+        joint_vel: 0.002        # σ ≈ 0.02 rad/s
+        joint_torque: 0.002     # σ ≈ 0.02 Nm
     use_axis_angle: true
     use_past_actions: true
-    use_fext: true
+    include: # define observation state components
+    - q
+    - qdot
+    - tau
+    - fext
+    - ee_pos
+    - ee_ori
+    - gripper
+
+  action:
+    include: # define action components
+    - ee_pos 
+    - ee_ori
+    - gripper
+

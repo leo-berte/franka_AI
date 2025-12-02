@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 from pathlib import Path
+import shutil
 import argparse
 import time
 import torch
@@ -37,9 +38,12 @@ python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/ten
 
 
 # TODO:
+
 # 1) Optimize training (see notes)
 # 2) Add ACT, DP, Mine policyFactory
 # Handle correctly pre-training (i.e. I add Fext in input features for example)
+
+
 
 
 def parse_args():
@@ -160,6 +164,10 @@ def train():
         episodes_stats = load_episodes_stats_patch(episode_stats_path)
         # Aggregate episodes stats in a unique global stats
         new_dataset_stats = aggregate_stats([episodes_stats[ep] for ep in train_ep])
+        # Save transformed stats in checkpoint dir as backup
+        dst_path = Path(checkpoints_dir) / "episodes_stats_transformed.jsonl"
+        shutil.copy(episode_stats_path, dst_path)
+
         # Setup policy
         policy = DiffusionPolicy(cfg, dataset_stats=new_dataset_stats)
 

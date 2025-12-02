@@ -42,6 +42,8 @@ class CustomTransforms():
     def __init__(self, dataloader_cfg, dataset_cfg, transforms_cfg, train=False):
         
         self.train = train
+
+        # dataset state and action indeces
         self.feature_groups = dataset_cfg["features"]
         state_ranges = dataset_cfg["state_slices"]
         self.state_slices = {k: slice(v[0], v[1]) for k, v in state_ranges.items()}
@@ -52,21 +54,24 @@ class CustomTransforms():
         self.N_history = dataloader_cfg["N_history"]
         self.N_chunk = dataloader_cfg["N_chunk"]
 
-        # state noise stds
-        noise = transforms_cfg["state"]["noise_std_dev"]
-        self.joint_vel_std_dev = noise["joint_vel"]
-        self.joint_torque_std_dev = noise["joint_torque"]
+        # state augmentations
+        state_aug_cfg = transforms_cfg["state"]["augmentations"]
+        self.joint_vel_std_dev = state_aug_cfg["noise_std_dev"]["joint_vel"]
+        self.joint_torque_std_dev = state_aug_cfg["noise_std_dev"]["joint_torque"]
 
         # state transforms
         self.use_axis_angle = transforms_cfg["state"]["use_axis_angle"]
         self.use_past_actions = transforms_cfg["state"]["use_past_actions"]
-        self.use_fext = transforms_cfg["state"]["use_fext"]
+        self.include_states = transforms_cfg["state"]["include"]
+
+        # action transforms
+        self.include_actions = transforms_cfg["action"]["include"]
 
         # image resize
-        self.img_resize = transforms_cfg["image"]["resize"]
+        self.img_resize = transforms_cfg["visual"]["img_resize"]
 
         # image augmentations
-        aug_cfg = transforms_cfg["image"]["augmentations"]
+        vis_aug_cfg = transforms_cfg["visual"]["augmentations"]
         
         # convert img to [0,1] + resize (both training and inference)
         base_tf_pre = torch.nn.Sequential(
@@ -78,23 +83,23 @@ class CustomTransforms():
         # training image augmentations
         train_tf = torch.nn.Sequential(
             K.ColorJitter(
-                brightness=aug_cfg["color_jitter"]["brightness"],
-                contrast=aug_cfg["color_jitter"]["contrast"],
-                saturation=aug_cfg["color_jitter"]["saturation"],
-                hue=aug_cfg["color_jitter"]["hue"],
-                p=aug_cfg["color_jitter"]["p"],
+                brightness=vis_aug_cfg["color_jitter"]["brightness"],
+                contrast=vis_aug_cfg["color_jitter"]["contrast"],
+                saturation=vis_aug_cfg["color_jitter"]["saturation"],
+                hue=vis_aug_cfg["color_jitter"]["hue"],
+                p=vis_aug_cfg["color_jitter"]["p"],
                 same_on_batch=True,
                 ),
             K.RandomGaussianBlur(
-                kernel_size=tuple(aug_cfg["gaussian_blur"]["kernel_size"]),
-                sigma=tuple(aug_cfg["gaussian_blur"]["sigma"]),
-                p=aug_cfg["gaussian_blur"]["p"],
+                kernel_size=tuple(vis_aug_cfg["gaussian_blur"]["kernel_size"]),
+                sigma=tuple(vis_aug_cfg["gaussian_blur"]["sigma"]),
+                p=vis_aug_cfg["gaussian_blur"]["p"],
                 same_on_batch=True,
                 ),
             K.RandomAffine(
-                degrees=aug_cfg["random_affine"]["degrees"],
-                translate=tuple(aug_cfg["random_affine"]["translate"]),
-                p=aug_cfg["random_affine"]["p"],
+                degrees=vis_aug_cfg["random_affine"]["degrees"],
+                translate=tuple(vis_aug_cfg["random_affine"]["translate"]),
+                p=vis_aug_cfg["random_affine"]["p"],
                 same_on_batch=True,
                 )
         )
@@ -102,6 +107,11 @@ class CustomTransforms():
         # define full pipeline for both training and inference
         self.img_tf_inference = torch.nn.Sequential(base_tf_pre)
         self.img_tf_train = torch.nn.Sequential(base_tf_pre, train_tf)
+
+        # extract dataset features to be removed
+        self.skip_features = []
+        for v in self.feature_groups["REMOVE"]:
+            self.skip_features.append(v)
 
     def joint_vel_transforms(self, v):
         noise = torch.randn_like(v[:1,:]) * self.joint_vel_std_dev # v: (N_h, D) (history) → noise: (1, D)
@@ -155,6 +165,9 @@ class CustomTransforms():
         return torch.cat([xyz, w], dim=-1)
 
     def transform(self, sample):
+
+        state_parts = []
+        action_parts = []
         
         for k, v in sample.items(): # each sample contains the N_h dimension (but no B dimension)
             
@@ -168,57 +181,52 @@ class CustomTransforms():
 
                 v = v.to(torch.float32) # convert data to tensor float32
 
-                # add noise on joint velocities
-                joint_vel = v[..., self.state_slices["qdot"]]
-                joint_vel_aug = self.joint_vel_transforms(joint_vel) if self.train else joint_vel
+                for state_name in self.include_states:
 
-                # add noise on joint torques
-                joint_torque = v[..., self.state_slices["tau"]]
-                joint_torque_aug = self.joint_torque_transforms(joint_torque) if self.train else joint_torque
+                    if state_name == "q": 
+                        part = v[..., self.state_slices["q"]]
+                    elif state_name == "qdot": # add noise on joint velocities
+                        part = v[..., self.state_slices["qdot"]]
+                        part = self.joint_vel_transforms(part) if self.train else part
+                    elif state_name == "tau": # add noise on joint torques
+                        part = v[..., self.state_slices["tau"]]
+                        part = self.joint_torque_transforms(part) if self.train else part
+                    elif state_name == "fext": 
+                        part = v[..., self.state_slices["fext"]]
+                    elif state_name == "ee_pos": 
+                        part = v[..., self.state_slices["ee_pos"]]
+                    elif state_name == "ee_ori": # convert orientation
+                        q_orientation = v[..., self.state_slices["ee_quaternion"]]
+                        part = self.quaternion2axis_angle(q_orientation) if self.use_axis_angle else q_orientation
+                    elif state_name == "gripper": # convert to discrete gripper state (0.0 or 1.0)
+                        gripper_cont = v[..., self.state_slices["gripper"]]
+                        part = self.gripper_continuous2discrete(gripper_cont) 
 
-                # convert to discrete gripper state (0.0 or 1.0)
-                gripper_cont = v[..., self.state_slices["gripper"]]
-                gripper_disc = self.gripper_continuous2discrete(gripper_cont)
-                
-                # convert orientation
-                q_orientation = v[..., self.state_slices["ee_quaternion"]]
-                orientation = self.quaternion2axis_angle(q_orientation) if self.use_axis_angle else q_orientation
-
-                # rebuild state vector
-                state_parts = [
-                    v[..., self.state_slices["q"]],
-                    joint_vel_aug,
-                    joint_torque_aug,
-                    v[..., self.state_slices["ee_pos"]],
-                    orientation,
-                    gripper_disc
-                ]
-
-                # use external force
-                if self.use_fext:
-                    state_parts.append(v[..., self.state_slices["ext_force"]])
+                    # add part to state vector
+                    state_parts.append(part)
 
                 v_new = torch.cat(state_parts, dim=-1)
-
                 sample[k] = v_new
 
             if k in self.feature_groups["ACTION"]:
 
                 v = v.to(torch.float32) # convert data to tensor float32
 
-                # convert orientation
-                q_orientation = v[..., self.action_slices["ee_quaternion"]]
-                orientation = self.quaternion2axis_angle(q_orientation) if self.use_axis_angle else q_orientation
+                for action_name in self.include_actions:
 
-                # convert to discrete gripper state (0.0 or 1.0)
-                gripper_cont = v[..., self.action_slices["gripper"]]
-                gripper_disc = self.gripper_continuous2discrete(gripper_cont)
+                    if action_name == "ee_pos": 
+                        part = v[..., self.action_slices["ee_pos"]]
+                    elif action_name == "ee_ori": # convert orientation
+                        q_orientation = v[..., self.action_slices["ee_quaternion"]]
+                        part = self.quaternion2axis_angle(q_orientation) if self.use_axis_angle else q_orientation
+                    elif action_name == "gripper": # convert to discrete gripper state (0.0 or 1.0)
+                        gripper_cont = v[..., self.action_slices["gripper"]]
+                        part = self.gripper_continuous2discrete(gripper_cont) 
 
-                v_new = torch.cat([
-                    v[..., self.action_slices["ee_pos"]],
-                    orientation,
-                    gripper_disc
-                ], dim=-1)
+                    # add part to state vector
+                    action_parts.append(part)
+
+                v_new = torch.cat(action_parts, dim=-1)
 
                 if self.use_past_actions:
                     past_actions = v_new[:self.N_history, :]
@@ -233,5 +241,8 @@ class CustomTransforms():
                 sample[state_ft_name],
                 past_actions,
             ], dim=-1)
+
+        # drop unwanted features
+        sample = {k: v for k, v in sample.items() if k not in self.skip_features}
 
         return sample

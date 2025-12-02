@@ -25,11 +25,6 @@ class TransformedDataset(Dataset):
         self.base = base_dataset
         self.custom_transforms = custom_transforms
 
-        # extract dataset features to be removed
-        self.skip_features = []
-        for v in self.custom_transforms.feature_groups["REMOVE"]:
-            self.skip_features.append(v)
-
     def __len__(self):
         return len(self.base)
 
@@ -40,9 +35,6 @@ class TransformedDataset(Dataset):
 
         # apply transforms
         sample = self.custom_transforms.transform(sample) 
-
-        # drop unwanted features
-        sample = {k: v for k, v in sample.items() if k not in self.skip_features}
 
         return sample
 
