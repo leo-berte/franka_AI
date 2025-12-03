@@ -13,6 +13,7 @@ from cv_bridge import CvBridge
 from collections import deque
 import threading
 import torch
+import numpy as np
 
 from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
 
@@ -21,17 +22,19 @@ from franka_ai.dataset.utils import get_configs_dataset, build_delta_timestamps
 # from franka_ai.training.utils import get_configs_training
 from franka_ai.inference.utils import get_configs_inference
 
+"""
+Run: 
+Play rosbag: ros2 bag play bag1.db3
+"""
 
 # TODO:
 
-# 0) Play rosbag: ros2 bag play bag1.db3
-
-# build_obs synchronization
 
 # policy factory
 
 
-# capire se output è traiettoria di azioni e come pubblicarla
+# build_obs synchronization and feed directly the model observation --> generate_actions(obs) with in:(B, N_hist, D) --> out:(N_chunk, D)
+
 # traj stitching
 
 # uso filtered o output diretto della policy?
@@ -59,13 +62,6 @@ class FrankaInference(Node):
         # Get configs about dataset, training related to the saved checkpoint
         dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(configs_dataset_rel_path)
         # _, normalization_cfg = get_configs_training(configs_training_rel_path)
-
-
-
-        # TODO: qua ho escluso realsense_rgb, controlla che in effetti observation dict la rimuove post transform
-        print(dataset_cfg["features"])
-
-
 
         # Get parameter values from dataset.yaml
         self.device = dataloader_cfg["device"]
@@ -175,7 +171,16 @@ class FrankaInference(Node):
             self.buffers["realsense_rgb"].append((msg.header.stamp, rgb))
 
     def realsense_depth_callback(self, msg):
-        pass
+
+        # Depth is a 16-bit uint image; convert to float32 meters
+        depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')  
+        depth = depth.astype('float32')
+
+        # # Replace invalid values (0 or NaN) with last valid or 0 + normalize ??
+        # depth[depth <= 0] = 0.0
+
+        with self.buffer_lock:
+            self.buffers["realsense_depth"].append((msg.header.stamp, depth))
     
     def joint_state_callback(self, msg):
 
@@ -221,18 +226,34 @@ class FrankaInference(Node):
 
     def ready(self):
 
-        # Check all the buffers have at least 1 element
-        for buf in self.buffers.values():
-            if (len(buf)<=0):
+        # Check all the state buffers have at least 1 element
+        for k, buf in self.buffers.items():
+            if (k!="action" and len(buf)<=0):
                 return False
-        return True
+            
+        # Eventually initialize action buffer with current robot state
+        if len(self.buffers["action"]) <= 0 \
+            and len(self.buffers["cart_pos_curr"]) > 0 \
+            and len(self.buffers["cart_quat_curr"]) > 0 \
+            and len(self.buffers["gripper_state"]) > 0:
+
+            # Get current robot state
+            curr_pos = self.buffers["cart_pos_curr"][-1][1]
+            curr_quat = self.buffers["cart_quat_curr"][-1][1]
+            curr_grip = CustomTransforms.gripper_continuous2discrete(self.buffers["gripper_state"][-1][1])
+            
+            # Compose action and add to buffer
+            curr_action = curr_pos + curr_quat + [curr_grip]
+            self.buffers["action"].append((self.get_clock().now().to_msg(), curr_action))
+
+        return len(self.buffers["action"]) > 0 
 
     def stack_data(self, buffer, is_image=False):
 
         # [(t0, x0), (t1, x1), (t2, x2)] 
         # [x0, x1, x2, x2, x2] 
 
-        # Get last N_history data
+        # Get last N_history data + padding
         if len(buffer) < self.N_history:
             n_missing = self.N_history - len(buffer)
             last = buffer[-1] # replicate last item
@@ -245,38 +266,37 @@ class FrankaInference(Node):
 
         #  Convert to torch tensors
         if (is_image):
-            values = [torch.from_numpy(v).float() for v in values]
-            values = [v.permute(2, 0, 1) for v in values] # permute images from HWC to CHW
+            tensor_values = [torch.from_numpy(v).float() for v in values]
+            tensor_values = [v.permute(2, 0, 1).contiguous() for v in tensor_values] # permute images from HWC to CHW
         else:
-            values = [torch.tensor(v, dtype=torch.float32) for v in values]
+            tensor_values = []
+            for v in values:  
+                t = torch.tensor(v, dtype=torch.float32)
+                if t.dim() == 0:
+                    t = t.unsqueeze(0)  # make scalar into 1D tensor
+                tensor_values.append(t)
 
         # Stack to (N_history, ... )
-        values = torch.stack(values, dim=0)
+        stacked_values = torch.stack(tensor_values, dim=0)
 
-        return values
+        return stacked_values
 
-    def get_last_data_at_ref_time(self, reference_times, data_times, data_dict):
+    # def get_last_data_at_ref_time(self, reference_times, data_times, data_dict):
 
-        indices = []
-        idx = 0
-        for ref_time in reference_times:
-            while idx < len(data_times) - 1 and data_times[idx + 1] <= ref_time:
-                idx += 1
-            indices.append(idx)
+    #     indices = []
+    #     idx = 0
+    #     for ref_time in reference_times:
+    #         while idx < len(data_times) - 1 and data_times[idx + 1] <= ref_time:
+    #             idx += 1
+    #         indices.append(idx)
 
-        last_data_dict = {}
-        for key in data_dict.keys():
-            last_data_dict[key] = data_dict[key][indices]
+    #     last_data_dict = {}
+    #     for key in data_dict.keys():
+    #         last_data_dict[key] = data_dict[key][indices]
 
-        return last_data_dict
+    #     return last_data_dict
 
-    def build_obs(self):
-        
-        # Make a snapshot copy inside lock
-        with self.buffer_lock:
-            buffer_copies = {k: list(v) for k, v in self.buffers.items()}
-
-
+    # def get_ref_times(self):
 
         # ros_timestamp_ref = webcam1_buffer_copy[-1][0]  # last timestamp
         # t_sec_ref = ros_timestamp_ref.sec + ros_timestamp_ref.nanosec * 1e-9
@@ -288,13 +308,17 @@ class FrankaInference(Node):
 
         # self.get_last_data_at_ref_time(ref_times, data_times, data_dict)
 
+    def build_obs(self):
+        
+        # Make a snapshot copy inside lock
+        with self.buffer_lock:
+            buffer_copies = {k: list(v) for k, v in self.buffers.items()}
 
         # Convert data to tensors and create history
-        data_tensors = {}
+        data_tensors = {} # (N_history, ...)
         for k, buf in buffer_copies.items():
             is_image = "webcam" in k or "rgb" in k
             data_tensors[k] = self.stack_data(buf, is_image=is_image)
-
 
         # Rebuild state vector (N_hist, D) as in original dataset
         state = torch.cat([
@@ -316,7 +340,7 @@ class FrankaInference(Node):
             "observation.images.gripper_camera": data_tensors["realsense_rgb"],
         }
 
-        # Transforms needs to include past actions in the state
+        # Transforms need to include past actions in the state
         observation["action"] = data_tensors["action"]
 
         # Apply custom transforms
@@ -325,8 +349,11 @@ class FrankaInference(Node):
         # Remove key "action"
         observation.pop("action", None)
 
-        # Add extra (empty) batch dimension, required to forward the policy
-        observation = {k: v.unsqueeze(0) for k, v in observation.items()}
+        # PATCH to convert (N_hist, ...) in (1, ...) by taking last timestep
+        for k, v in observation.items():
+            if v.dim() >= 2:
+                v = v[-1, ...].contiguous()
+                observation[k] = v.unsqueeze(0)
 
         # Move data to device
         observation = {k: v.to(self.device, non_blocking=True) for k, v in observation.items()}
@@ -344,32 +371,35 @@ class FrankaInference(Node):
 
         # Inference
         with torch.inference_mode():
-            action = self.policy.select_action(obs) # che dim ha????
+            action = self.policy.select_action(obs) # (B, D) --> (D, )
+            # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
+            print("action shape: ", action.shape)
 
-        # Convert to numpy
-        numpy_action = action.squeeze(0).to("cpu").numpy() # ????
+        # Move to CPU and convert to numpy
+        action = action.squeeze(0).to("cpu")
 
         # Convert axis-angle to quaternion
-        quat = CustomTransforms.axis_angle2quaternion2(numpy_action[3:7])
+        quat = CustomTransforms.axis_angle2quaternion(action[3:6])
+        quat_np = np.array(quat)
 
         # Get action 
-        action = numpy_action[:3] + quat + numpy_action[-1]
+        action_np = action.numpy()
+        action_pre_tf = np.concatenate([action_np[:3], quat_np, [action_np[-1]]])
 
         # Save action in buffer safely
         with self.buffer_lock:
-            self.buffers["action"].append((self.get_clock().now().to_msg(), action))
-            # self.action_buffer.append((self.get_clock().now().nanoseconds, action)) 
+            self.buffers["action"].append((self.get_clock().now().to_msg(), action_pre_tf))
 
         # Set cart pose action
         cart_msg = PoseStamped()
         cart_msg.header.stamp = self.get_clock().now().to_msg()
-        cart_msg.pose.position.x = float(action[0])
-        cart_msg.pose.position.y = float(action[1])
-        cart_msg.pose.position.z = float(action[2])
-        cart_msg.pose.orientation.x = float(quat[0])
-        cart_msg.pose.orientation.y = float(quat[1])
-        cart_msg.pose.orientation.z = float(quat[2])
-        cart_msg.pose.orientation.w = float(quat[3])
+        cart_msg.pose.position.x = action_np[0]
+        cart_msg.pose.position.y = action_np[1]
+        cart_msg.pose.position.z = action_np[2]
+        cart_msg.pose.orientation.x = quat_np[0]
+        cart_msg.pose.orientation.y = quat_np[1]
+        cart_msg.pose.orientation.z = quat_np[2]
+        cart_msg.pose.orientation.w = quat_np[3]
 
         # Publish
         self.cart_pose_action_pub.publish(cart_msg)
@@ -377,7 +407,7 @@ class FrankaInference(Node):
         # Set gripper action
         gripper_msg = GripperWidth()
         gripper_msg.header.stamp = self.get_clock().now().to_msg()
-        gripper_msg.width = float(action[-1])
+        gripper_msg.width = action_np[-1]
 
         # Publish
         self.gripper_action_pub.publish(gripper_msg)

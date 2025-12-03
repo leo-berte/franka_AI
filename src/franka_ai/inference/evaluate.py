@@ -41,8 +41,8 @@ def evaluate():
 
     # Base folder for all experiments
     base_output_dir = os.path.join(os.getcwd())
-    pretrained_policy_path = os.path.join(base_output_dir, "outputs", "checkpoints", "today_outliers_DP_2025-12-01_14-28-57", "best_model.pt") # SI, allenato da conda
-    pretrained_policy_path = os.path.join(base_output_dir, "outputs", "checkpoints", "today_outliers_DP_2025-12-01_13-38-23", "best_model.pt") # NO, allenato da docker
+    pretrained_policy_path = os.path.join(base_output_dir, "outputs", "checkpoints", "today_outliers_DP_2025-12-02_16-40-09", "best_model.pt") # SI, allenato da conda
+    # pretrained_policy_path = os.path.join(base_output_dir, "outputs", "checkpoints", "today_outliers_DP_2025-12-02_17-10-22", "best_model.pt") # NO, allenato da docker
     print(pretrained_policy_path)
 
     # --> not working even with: leonardo@leonardo-Precision-5490:~/Documents/Coding/franka_AI/outputs$ sudo chown -R $USER:$USER checkpoints/

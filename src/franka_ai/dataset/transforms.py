@@ -121,8 +121,15 @@ class CustomTransforms():
         noise = torch.randn_like(v[:1,:]) * self.joint_torque_std_dev
         return v + noise
 
-    def gripper_continuous2discrete(self, value, gripper_half_width=0.037):
-        return (value > gripper_half_width).float() # returns 0 (closed) or 1 (open)
+    @staticmethod
+    def gripper_continuous2discrete(value, gripper_half_width=0.037):
+
+        # input could be tensor or normal float
+        if torch.is_tensor(value):
+            return (value > gripper_half_width).float() # returns 0 (closed) or 1 (open)
+        else:
+            return float(value > gripper_half_width)    # returns 0 (closed) or 1 (open)
+
 
     @staticmethod
     def quaternion2axis_angle(q):

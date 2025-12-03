@@ -157,7 +157,8 @@ def train():
                             output_features=output_features, 
                             normalization_mapping=normalization_mapping,
                             n_obs_steps=dataloader_cfg["N_history"],
-                            horizon=dataloader_cfg["N_chunk"])
+                            horizon=dataloader_cfg["N_chunk"],
+                            n_action_steps=3)
 
         # Get episodes stats
         episode_stats_path = Path(dataset_path) / "meta" / "episodes_stats_transformed.jsonl"
