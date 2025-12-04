@@ -1,0 +1,19 @@
+# ------
+# MODELS
+# ------
+
+diffusion: 
+
+  n_obs_steps: 3 # must be the same as in dataset.yaml
+  horizon: 16    # must be the same as in dataset.yaml
+  n_action_steps: 8
+
+
+act:
+
+  n_obs_steps: 1 # must be the same as in dataset.yaml
+  chunk_size: 16 # must be the same as in dataset.yaml
+  n_action_steps: 8
+
+
+my_policy: {}

@@ -7,6 +7,6 @@ inference:
   pretrained_policy_abs_path: "/workspace/outputs/checkpoints/today_outliers_DP_2025-12-02_17-10-22/best_model.pt"
   configs_dataset_rel_path: "../workspace/outputs/checkpoints/today_outliers_DP_2025-12-02_17-10-22/dataset.yaml"  # saved with model weights
   # configs_training_rel_path: "../workspace/outputs/checkpoints/today_outliers_DP_2025-12-02_17-10-22/train.yaml" # saved with model weights
-  policy_rate: 30.0
+  policy_rate: 30 # for now, it shall be the same as: fps_sampling_chunk
   fps_dataset: 29.995
-
+  policy_name: "diffusion"

@@ -8,8 +8,6 @@ import csv
 import os
 
 from lerobot.configs.types import FeatureType
-from lerobot.common.policies.diffusion.configuration_diffusion import DiffusionConfig
-from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
 from lerobot.common.datasets.compute_stats import aggregate_stats
 
 from torch.nn.utils import clip_grad_norm_
@@ -19,17 +17,19 @@ from franka_ai.dataset.load_dataset import make_dataloader
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.utils import get_configs_dataset, load_episodes_stats_patch
 from franka_ai.training.utils import *
+from franka_ai.models.utils import get_configs_models
+from franka_ai.models.factory import get_policy_config_class, make_policy, get_policy_class
 
 """
 Run the code: 
 
 python src/franka_ai/training/train.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
                                                      --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints
-                                                     --policy ACT
+                                                     --policy diffusion
 
 python src/franka_ai/training/train.py --dataset /workspace/data/today_data/today_outliers
                                        --pretrained /workspace/outputs/checkpoints
-                                       --policy ACT
+                                       --policy diffusion
 
 Activate tensorboard (from where there is this code): 
 
@@ -40,8 +40,14 @@ python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/ten
 # TODO:
 
 # 1) Optimize training (see notes)
-# 2) Add ACT, DP, Mine policyFactory
+
+# pesi salvati da dentro il docker poi sono accessibili? --> FABIO
+
+# try ACT
+
 # Handle correctly pre-training (i.e. I add Fext in input features for example)
+
+# muovere N_h, N_c in models.yaml ONLY
 
 
 
@@ -57,8 +63,8 @@ def parse_args():
                         help="Absolute path to pretrained checkpoint")
 
     parser.add_argument("--policy", type=str, default="DP",
-                        choices=["DP", "ACT"],
-                        help="Policy type")
+                        choices=["diffusion", "act"],
+                        help="Policy name")
 
     return parser.parse_args()
 
@@ -81,14 +87,15 @@ def train():
     args = parse_args()
     dataset_path = args.dataset
     pretrained_path = args.pretrained
-    policy_type = args.policy
+    policy_name = args.policy
 
     # Load configs
     dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset("configs/dataset.yaml")
     train_cfg, normalization_cfg = get_configs_training("configs/train.yaml")
+    models_cfg = get_configs_models("configs/models.yaml")
 
     # Get folders to save weights and tensorboard logs
-    checkpoints_dir, tensorboard_dir, tsbrd_writer = set_output_folders_train(policy_type, dataset_path)
+    checkpoints_dir, tensorboard_dir, tsbrd_writer = set_output_folders_train(policy_name, dataset_path)
 
     # create CSV file to store training losses
     csv_path = os.path.join(checkpoints_dir, "loss_log.csv")
@@ -112,6 +119,16 @@ def train():
         raise ValueError("save_ckpt_freq must be >= eval_freq and a multiple of it")
     if training_steps % save_ckpt_freq != 0:
         raise ValueError("training_steps must be a multiple of save_ckpt_freq to ensure final evaluation alignment")
+    
+    # # Consistency checks
+    # if models_cfg["diffusion"]["n_obs_steps"] != dataloader_cfg["N_history"]:
+    #     raise ValueError("Param n_obs_steps in models.yaml must be the same to N_history contained in dataset.yaml")
+    # if models_cfg["diffusion"]["horizon"] != dataloader_cfg["N_chunk"]:
+    #     raise ValueError("Param horizon in models.yaml must be the same to N_chunk contained in dataset.yaml")
+    # if models_cfg["act"]["n_obs_steps"] != dataloader_cfg["N_history"]:
+    #     raise ValueError("Param n_obs_steps in models.yaml must be the same to N_history contained in dataset.yaml")
+    # if models_cfg["act"]["chunk_size"] != dataloader_cfg["N_chunk"]:
+    #     raise ValueError("Param chunk_size in models.yaml must be the same to N_chunk contained in dataset.yaml")
 
     # Eventually freeze seed for reproducibility
     if seed_val is not None and seed_val >= 0:
@@ -137,7 +154,8 @@ def train():
     if pretrained_path:
 
         # Load from checkpoint
-        policy = DiffusionPolicy.from_pretrained(pretrained_path)
+        PolicyClass = get_policy_class(policy_name)
+        policy = PolicyClass.from_pretrained(pretrained_path)
         print(f"Loaded pretrained policy from {pretrained_path}")
 
     else:
@@ -152,14 +170,16 @@ def train():
         # Define normalization and unnormalization mode 
         normalization_mapping = parse_normalization_mapping(normalization_cfg)
 
-        # Policies are initialized with a configuration class, in this case `DiffusionConfig`. 
-        cfg = DiffusionConfig(input_features=input_features, 
-                            output_features=output_features, 
-                            normalization_mapping=normalization_mapping,
-                            n_obs_steps=dataloader_cfg["N_history"],
-                            horizon=dataloader_cfg["N_chunk"],
-                            n_action_steps=3)
+        # Get policy configuration class
+        ConfigClass = get_policy_config_class(policy_name)
 
+        cfg = ConfigClass(
+            input_features=input_features,
+            output_features=output_features,
+            normalization_mapping=normalization_mapping,
+            **models_cfg[policy_name]
+        )
+                            
         # Get episodes stats
         episode_stats_path = Path(dataset_path) / "meta" / "episodes_stats_transformed.jsonl"
         episodes_stats = load_episodes_stats_patch(episode_stats_path)
@@ -170,7 +190,8 @@ def train():
         shutil.copy(episode_stats_path, dst_path)
 
         # Setup policy
-        policy = DiffusionPolicy(cfg, dataset_stats=new_dataset_stats)
+        policy = make_policy(policy_name, cfg, dataset_stats=new_dataset_stats)
+
 
     # Set training mode
     policy.train() # during training layers like Dropout or BatchNorm are ON 
@@ -221,6 +242,31 @@ def train():
 
             # Move data to device
             batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
+
+            # batch["observation.state"].squeeze(1)
+            # batch["observation.images.front_cam1"].squeeze(1)
+            # batch["observation.images.front_cam2"].squeeze(1)
+            # batch["observation.images.front_cam3"].squeeze(1)
+            # batch["observation.images.gripper_camera"].squeeze(1)
+
+            # batch["observation.state"] = batch["observation.state"].squeeze(1)
+
+            # cams = [
+            #     batch.pop("observation.images.front_cam1").squeeze(1),
+            #     batch.pop("observation.images.front_cam2").squeeze(1),
+            #     batch.pop("observation.images.front_cam3").squeeze(1),
+            #     batch.pop("observation.images.gripper_camera").squeeze(1),
+            # ]
+
+            # batch["observation.images"] = torch.stack(cams, dim=1)
+
+            # # print all keys in dataset
+            # for k, v in batch.items():
+            #     if isinstance(v, torch.Tensor):
+            #         print(k, v.shape)
+            #     else:
+            #         print(k, type(v))
+
 
             # Computes the loss (and optionally predictions)
             loss, _ = policy.forward(batch)

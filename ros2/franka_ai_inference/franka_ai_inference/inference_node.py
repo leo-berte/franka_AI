@@ -15,12 +15,12 @@ import threading
 import torch
 import numpy as np
 
-from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
-
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.utils import get_configs_dataset, build_delta_timestamps
 # from franka_ai.training.utils import get_configs_training
 from franka_ai.inference.utils import get_configs_inference
+from franka_ai.models.factory import get_policy_class
+
 
 """
 Run: 
@@ -29,18 +29,12 @@ Play rosbag: ros2 bag play bag1.db3
 
 # TODO:
 
-
-# policy factory
-
-
 # build_obs synchronization and feed directly the model observation --> generate_actions(obs) with in:(B, N_hist, D) --> out:(N_chunk, D)
 
 # traj stitching
-
-# uso filtered o output diretto della policy?
-
-
-
+# uso filtered o output diretto della policy? --> FABIO
+# PAST_ACTIONS viene ricreata da output policy.. ma come farlo automaticamente da yaml senza riscrivere codice per ogni ablation? --> FABIO
+# --> questo viene fatto per observation perchè ricreo STATE del dataset e transformrs poi lo trattano based on yaml
 
 
 class FrankaInference(Node):
@@ -58,6 +52,7 @@ class FrankaInference(Node):
         pretrained_policy_abs_path = inference_cfg["pretrained_policy_abs_path"]
         configs_dataset_rel_path = inference_cfg["configs_dataset_rel_path"]
         # configs_training_rel_path = inference_cfg["configs_training_rel_path"]        
+        policy_name = inference_cfg["policy_name"]
 
         # Get configs about dataset, training related to the saved checkpoint
         dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(configs_dataset_rel_path)
@@ -125,7 +120,8 @@ class FrankaInference(Node):
         self.timer = self.create_timer(1.0 / self.policy_rate, self.inference_timer)
 
         # Load policy
-        self.policy = DiffusionPolicy.from_pretrained(pretrained_policy_abs_path)
+        PolicyClass = get_policy_class(policy_name)
+        self.policy = PolicyClass.from_pretrained(pretrained_policy_abs_path)
         self.policy.reset() # reset the policy to prepare for rollout
 
         # Extract input features keys

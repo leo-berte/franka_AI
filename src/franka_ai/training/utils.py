@@ -2,7 +2,6 @@ from datetime import datetime
 from shutil import copyfile
 import os
 import yaml
-import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from lerobot.configs.types import FeatureType, PolicyFeature, NormalizationMode
@@ -49,6 +48,7 @@ def set_output_folders_train(policy_type, dataset_path):
     # Save configs inside checkpoint folder for reproducibility
     copyfile("configs/dataset.yaml", os.path.join(checkpoints_dir, "dataset.yaml"))
     copyfile("configs/train.yaml", os.path.join(checkpoints_dir, "train.yaml"))
+    copyfile("configs/models.yaml", os.path.join(checkpoints_dir, "models.yaml"))
 
     return checkpoints_dir, tensorboard_dir, writer
 
