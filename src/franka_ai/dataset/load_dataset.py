@@ -43,7 +43,8 @@ def make_dataloader(
     repo_id=None, 
     dataset_path=None, 
     dataloader_cfg=None,
-    feature_groups=None,
+    dataset_cfg=None,
+    model_cfg=None,
     transforms_train=None,
     transforms_val=None
 ):
@@ -81,24 +82,26 @@ def make_dataloader(
     """
 
     # Extract parameters
-    N_history          = dataloader_cfg["N_history"]
-    N_chunk            = dataloader_cfg["N_chunk"]
     batch_size         = dataloader_cfg["batch_size"]
     shuffle            = dataloader_cfg["shuffle"]
     train_split        = dataloader_cfg["train_split"]
-    fps_sampling_hist  = dataloader_cfg["fps_sampling_hist"]
-    fps_sampling_chunk = dataloader_cfg["fps_sampling_chunk"]
     num_workers        = dataloader_cfg["num_workers"]
     prefetch_factor    = dataloader_cfg["prefetch_factor"]
     seed_val           = dataloader_cfg["seed_val"]
     print_ds_info      = dataloader_cfg["print_ds_info"]
     device             = torch.device(dataloader_cfg["device"])
 
+    # Extract parameters
+    N_history          = model_cfg["params"].get("n_obs_steps") or model_cfg["params"].get("N_history")
+    N_chunk            = model_cfg["params"].get("horizon")     or model_cfg["params"].get("chunk_size") or model_cfg["params"].get("N_chunk")
+    fps_sampling_hist  = model_cfg["sampling"]["fps_sampling_hist"]
+    fps_sampling_chunk = model_cfg["sampling"]["fps_sampling_chunk"]
+
     # Get dataset metadata
     dataset_meta = LeRobotDatasetMetadata(repo_id=repo_id, root=dataset_path)
 
     # Build the delta_timestamps dict for LeRobotDataset history and future        
-    delta_timestamps = build_delta_timestamps(feature_groups, N_history, N_chunk, dataset_meta.fps, fps_sampling_hist, fps_sampling_chunk)
+    delta_timestamps = build_delta_timestamps(dataset_cfg["features"], N_history, N_chunk, dataset_meta.fps, fps_sampling_hist, fps_sampling_chunk)
 
     # Generate random list of indeces covering all the episodes
     num_episodes = dataset_meta.total_episodes

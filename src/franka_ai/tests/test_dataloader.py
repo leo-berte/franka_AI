@@ -6,12 +6,13 @@ import os
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.load_dataset import make_dataloader
 from franka_ai.dataset.utils import get_configs_dataset, benchmark_loader, benchmark_loader2
+from franka_ai.models.utils import get_configs_models
 
 """
 Run the code: 
 
-python src/franka_ai/tests/test_dataloader.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
-python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/today_data/today_outliers
+python src/franka_ai/tests/test_dataloader.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers --policy diffusion
+python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/today_data/today_outliers --policy diffusion
 
 Visualize lerobot dataset uploaded in HF:
 
@@ -27,7 +28,7 @@ python -m lerobot.scripts.visualize_dataset --repo-id today_outliers --root /hom
 # 1) dataloader profiler based on transforms ON/OFF and dataloader params
 
 
-def get_dataset_path():
+def parse_args():
 
     # set parser
     parser = argparse.ArgumentParser()
@@ -37,33 +38,37 @@ def get_dataset_path():
         required=True,
         help="Absolute path to the dataset folder"
     )
+    parser.add_argument("--policy", type=str, default="diffusion",
+                    choices=["diffusion", "act"],
+                    help="Policy name")
     args = parser.parse_args()
 
     # return absolute path to the dataset
-    return args.dataset
+    return args.dataset, args.policy
 
 
 def main():
 
-    # Get path to dataset (via argparser)
-    dataset_path = get_dataset_path()
+    # Get path to dataset and policy name
+    dataset_path, policy_name = parse_args()
 
-    # Get configs about dataloader and dataset 
+    # Get configs
     dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset("configs/dataset.yaml")
+    models_cfg = get_configs_models("configs/models.yaml")
 
     # Prepare transforms for training
     transforms_train = CustomTransforms(
-        dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         transforms_cfg=transforms_cfg,
+        model_cfg=models_cfg[policy_name],
         train=True
     )
 
     # Prepare transforms for inference
     transforms_val = CustomTransforms(
-        dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         transforms_cfg=transforms_cfg,
+        model_cfg=models_cfg[policy_name],
         train=False
     )
 
@@ -71,7 +76,8 @@ def main():
     train_loader, _, val_loader, _ = make_dataloader(
         dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
-        feature_groups=dataset_cfg["features"],
+        dataset_cfg=dataset_cfg,
+        model_cfg=models_cfg[policy_name],
         transforms_train=transforms_train,
         transforms_val=transforms_val
     )

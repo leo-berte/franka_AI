@@ -39,7 +39,7 @@ class CustomTransforms():
         feature_groups: eature names used in the dataset.
     """
 
-    def __init__(self, dataloader_cfg, dataset_cfg, transforms_cfg, train=False):
+    def __init__(self, dataset_cfg, transforms_cfg, model_cfg, train=False):
         
         self.train = train
 
@@ -51,8 +51,8 @@ class CustomTransforms():
         self.action_slices = {k: slice(v[0], v[1]) for k, v in action_ranges.items()}
 
         # history and chunk sizes
-        self.N_history = dataloader_cfg["N_history"]
-        self.N_chunk = dataloader_cfg["N_chunk"]
+        self.N_history = model_cfg["params"].get("n_obs_steps") or model_cfg["params"].get("N_history")
+        self.N_chunk = model_cfg["params"].get("horizon") or model_cfg["params"].get("chunk_size") or model_cfg["params"].get("N_chunk")
 
         # state augmentations
         state_aug_cfg = transforms_cfg["state"]["augmentations"]

@@ -17,9 +17,9 @@ import numpy as np
 
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.utils import get_configs_dataset, build_delta_timestamps
-# from franka_ai.training.utils import get_configs_training
 from franka_ai.inference.utils import get_configs_inference
 from franka_ai.models.factory import get_policy_class
+from franka_ai.models.utils import get_configs_models
 
 
 """
@@ -51,25 +51,27 @@ class FrankaInference(Node):
         self.fps_dataset = inference_cfg["fps_dataset"]
         pretrained_policy_abs_path = inference_cfg["pretrained_policy_abs_path"]
         configs_dataset_rel_path = inference_cfg["configs_dataset_rel_path"]
-        # configs_training_rel_path = inference_cfg["configs_training_rel_path"]        
+        configs_models_rel_path = inference_cfg["configs_models_rel_path"]        
         policy_name = inference_cfg["policy_name"]
 
         # Get configs about dataset, training related to the saved checkpoint
         dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(configs_dataset_rel_path)
-        # _, normalization_cfg = get_configs_training(configs_training_rel_path)
+        models_cfg = get_configs_models(configs_models_rel_path)
+        model_cfg = models_cfg[policy_name]
 
-        # Get parameter values from dataset.yaml
+        # Get parameter values
         self.device = dataloader_cfg["device"]
-        self.N_history = dataloader_cfg["N_history"]
-        self.N_chunk = dataloader_cfg["N_chunk"]
-        self.fps_sampling_hist  = dataloader_cfg["fps_sampling_hist"]
-        self.fps_sampling_chunk = dataloader_cfg["fps_sampling_chunk"]
+        self.N_history = model_cfg["params"].get("n_obs_steps") or model_cfg["params"].get("N_history")
+        self.N_chunk = model_cfg["params"].get("horizon") or model_cfg["params"].get("chunk_size") or model_cfg["params"].get("N_chunk")
+        self.fps_sampling_hist = model_cfg["sampling"]["fps_sampling_hist"]
+        self.fps_sampling_chunk = model_cfg["sampling"]["fps_sampling_chunk"]
 
         # Prepare transforms for inference
         self.tf_inference = CustomTransforms(
             dataloader_cfg=dataloader_cfg,
             dataset_cfg=dataset_cfg,
             transforms_cfg=transforms_cfg,
+            model_cfg=models_cfg[policy_name],
             train=False
         )
 

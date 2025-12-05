@@ -4,16 +4,35 @@
 
 diffusion: 
 
-  n_obs_steps: 3 # must be the same as in dataset.yaml
-  horizon: 16    # must be the same as in dataset.yaml
-  n_action_steps: 8
+  params:
+    n_obs_steps: 3 
+    horizon: 16    
+    n_action_steps: 8
+
+  sampling:
+    fps_sampling_hist: 30
+    fps_sampling_chunk: 30
 
 
 act:
 
-  n_obs_steps: 1 # must be the same as in dataset.yaml
-  chunk_size: 16 # must be the same as in dataset.yaml
-  n_action_steps: 8
+  params:
+    n_obs_steps: 3 
+    horizon: 16    
+    n_action_steps: 8
+
+  sampling:
+    fps_sampling_hist: 30
+    fps_sampling_chunk: 30
 
 
-my_policy: {}
+my_policy:
+
+  params:
+    N_history: 3
+    N_chunk: 16
+    n_action_steps: 8
+
+  sampling:
+    fps_sampling_hist: 30
+    fps_sampling_chunk: 30

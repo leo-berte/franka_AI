@@ -11,6 +11,8 @@ from lerobot.common.datasets.utils import append_jsonlines, serialize_dict
 from franka_ai.dataset.load_dataset import TransformedDataset
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.utils import get_configs_dataset, build_delta_timestamps, LeRobotDatasetPatch
+from franka_ai.models.utils import get_configs_models
+
 
 """
 Run the code: 
@@ -20,11 +22,10 @@ python src/franka_ai/dataset/generate_updated_stats.py --dataset /workspace/data
 """
 
 # TODO:
-# 1) loro fanno anche sampling delle immagini per calcolare stats piu velocmente, io come posso farlo?
+# 1) How to sample images to compute stats faster as in lerobot?
 
 
-
-def get_dataset_path():
+def parse_args():
 
     # set parser
     parser = argparse.ArgumentParser()
@@ -146,8 +147,8 @@ def compute_episode_stats_streaming(dataloader, keep_keys, feature_groups, batch
 
 def main(): 
     
-    # Get path to dataset (via argparser)
-    dataset_path = get_dataset_path()
+    # Get path to dataset
+    dataset_path = parse_args()
 
     # Get episode indeces
     meta = LeRobotDatasetMetadata(repo_id=None, root=dataset_path)
@@ -156,33 +157,38 @@ def main():
     # Set output folder to save new stats
     output_path = Path(dataset_path) / "meta" / "episodes_stats_transformed.jsonl"
 
-    # Get configs about dataloader and dataset 
+    # Get configs
     dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset("configs/dataset.yaml")
     
     # Override values for episode stats generation
+    
     dataloader_cfg["batch_size"] = 1
-    dataloader_cfg["N_history"] = 1
-    dataloader_cfg["N_chunk"] = 1
-    dataloader_cfg["fps_sampling_hist"] = meta.fps
-    dataloader_cfg["fps_sampling_chunk"] = meta.fps
     dataloader_cfg["num_workers"] = 4
     dataloader_cfg["prefetch_factor"] = 2
 
+    model_cfg_override = {}
+    model_cfg_override.setdefault("params", {})
+    model_cfg_override.setdefault("sampling", {})
+    model_cfg_override["params"]["N_history"] = 1
+    model_cfg_override["params"]["N_chunk"] = 1
+    model_cfg_override["sampling"]["fps_sampling_hist"] = meta.fps
+    model_cfg_override["sampling"]["fps_sampling_chunk"] = meta.fps
+
     # Prepare transforms for computing dataset statistics only
     transforms_stats = CustomTransforms(
-        dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         transforms_cfg=transforms_cfg,
+        model_cfg=model_cfg_override,
         train=False
     )
 
     # Build the delta_timestamps dict for LeRobotDataset history and future        
     delta_timestamps = build_delta_timestamps(dataset_cfg["features"], 
-                                              dataloader_cfg["N_history"], 
-                                              dataloader_cfg["N_chunk"], 
+                                              model_cfg_override["params"]["N_history"],
+                                              model_cfg_override["params"]["N_chunk"],
                                               meta.fps, 
-                                              dataloader_cfg["fps_sampling_hist"], 
-                                              dataloader_cfg["fps_sampling_chunk"])
+                                              model_cfg_override["sampling"]["fps_sampling_hist"],
+                                              model_cfg_override["sampling"]["fps_sampling_chunk"])
     
     # select features to be used to compute statistics
     keep_keys = []
@@ -225,7 +231,7 @@ def main():
                                                    keep_keys,
                                                    dataset_cfg["features"],
                                                    dataloader_cfg["batch_size"],
-                                                   dataloader_cfg["N_history"])
+                                                   model_cfg_override["params"]["N_history"])
         
         # Save on file episode stats
         ep_stats = {"episode_index": ep, "stats": serialize_dict(ep_stats)}

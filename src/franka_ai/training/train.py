@@ -47,8 +47,6 @@ python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/ten
 
 # Handle correctly pre-training (i.e. I add Fext in input features for example)
 
-# muovere N_h, N_c in models.yaml ONLY
-
 
 
 
@@ -62,7 +60,7 @@ def parse_args():
     parser.add_argument("--pretrained", type=str, default=None,
                         help="Absolute path to pretrained checkpoint")
 
-    parser.add_argument("--policy", type=str, default="DP",
+    parser.add_argument("--policy", type=str, required=True,
                         choices=["diffusion", "act"],
                         help="Policy name")
 
@@ -120,29 +118,20 @@ def train():
     if training_steps % save_ckpt_freq != 0:
         raise ValueError("training_steps must be a multiple of save_ckpt_freq to ensure final evaluation alignment")
     
-    # # Consistency checks
-    # if models_cfg["diffusion"]["n_obs_steps"] != dataloader_cfg["N_history"]:
-    #     raise ValueError("Param n_obs_steps in models.yaml must be the same to N_history contained in dataset.yaml")
-    # if models_cfg["diffusion"]["horizon"] != dataloader_cfg["N_chunk"]:
-    #     raise ValueError("Param horizon in models.yaml must be the same to N_chunk contained in dataset.yaml")
-    # if models_cfg["act"]["n_obs_steps"] != dataloader_cfg["N_history"]:
-    #     raise ValueError("Param n_obs_steps in models.yaml must be the same to N_history contained in dataset.yaml")
-    # if models_cfg["act"]["chunk_size"] != dataloader_cfg["N_chunk"]:
-    #     raise ValueError("Param chunk_size in models.yaml must be the same to N_chunk contained in dataset.yaml")
-
     # Eventually freeze seed for reproducibility
     if seed_val is not None and seed_val >= 0:
         seed_everything(seed_val)
 
     # Prepare transforms for training, inference and for computing dataset stats
-    transforms_train = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=True) 
-    transforms_val = CustomTransforms(dataloader_cfg, dataset_cfg, transforms_cfg, train=False)
+    transforms_train = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=True) 
+    transforms_val = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=False)
 
     # Create loaders
     train_loader, train_ep, val_loader, val_ep = make_dataloader(
         dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
-        feature_groups=dataset_cfg["features"],
+        dataset_cfg=dataset_cfg,
+        model_cfg=models_cfg[policy_name],
         transforms_train=transforms_train,
         transforms_val=transforms_val
     )
@@ -177,7 +166,7 @@ def train():
             input_features=input_features,
             output_features=output_features,
             normalization_mapping=normalization_mapping,
-            **models_cfg[policy_name]
+            **models_cfg[policy_name]["params"]
         )
                             
         # Get episodes stats
