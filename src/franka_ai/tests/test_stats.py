@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 
 from lerobot.common.datasets.compute_stats import aggregate_stats
+from lerobot.common.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from franka_ai.dataset.utils import load_episodes_stats_patch, LeRobotDatasetPatch
 
@@ -64,8 +65,13 @@ def main():
     # Get path to dataset (via argparser)
     dataset_path = get_dataset_path()
 
+    # Get dataset metadata
+    dataset_meta = LeRobotDatasetMetadata(repo_id=None, root=dataset_path)
+    num_episodes = dataset_meta.total_episodes
+
     # Set episodes indeces to load
-    episodes_idx = [0,1]
+    episodes_idx = list(range(20))
+    # episodes_idx = list(range(num_episodes))
 
     ## 1) Transformed stats
 
@@ -94,7 +100,7 @@ def main():
     # print(dataset_with_original_stats.meta.stats["observation.state"])
 
     # Compare stats
-    check_stats(dataset_with_original_stats.meta.stats, new_dataset_stats)
+    check_stats(dataset_with_original_stats.stats, new_dataset_stats)
 
 
 if __name__ == "__main__":

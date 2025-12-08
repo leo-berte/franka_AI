@@ -6,7 +6,8 @@ dataloader:
   
   batch_size: 8
   shuffle: True
-  train_split: 0.8
+  train_split_ratio: 0.8
+  val_split_ratio: 0.2
   num_workers: 4
   prefetch_factor: 2
   device: "cuda"
@@ -61,7 +62,7 @@ dataset:
 transforms:
 
   visual:
-    img_resize: [224, 224]
+    img_resize: [150, 150]
     normalize: false
     augmentations:
       color_jitter:
@@ -84,8 +85,8 @@ transforms:
       noise_std_dev:
         joint_vel: 0.002        # σ ≈ 0.02 rad/s
         joint_torque: 0.002     # σ ≈ 0.02 Nm
-    use_axis_angle: true
-    use_past_actions: true
+    use_axis_angle: True
+    use_past_actions: True
     include: # define observation state components
     - q
     - qdot

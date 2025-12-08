@@ -25,21 +25,23 @@ Run the code:
 
 python src/franka_ai/training/train.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
                                                      --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints
+                                                     -- config config1
                                                      --policy diffusion
 
 python src/franka_ai/training/train.py --dataset /workspace/data/today_data/today_outliers
                                        --pretrained /workspace/outputs/checkpoints
+                                       -- config config1
                                        --policy diffusion
 
 Activate tensorboard (from where there is this code): 
 
-python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/tensorboard
+tensorboard --logdir outputs/tensorboard
+http://localhost:6006/#timeseries
 """
 
 
 # TODO:
 
-# to fix: pesi salvati da dentro il docker poi sono accessibili? 
 
 # train on SINGLE dataset --> STATE only --> 1 episode reply
 # train on SINGLE dataset --> full dataset for single bag pick & place
@@ -48,7 +50,8 @@ python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/ten
 # try ACT
 
 # 1) Handle correctly pre-training (i.e. I add Fext in input features for example)
-# 2) Optimize training (see notes)
+# 2) Optimize training (see notes) --> at least cosine sim o learning rate scheduler
+
 
 
 
@@ -65,6 +68,9 @@ def parse_args():
     parser.add_argument("--policy", type=str, required=True,
                         choices=["diffusion", "act"],
                         help="Policy name")
+    
+    parser.add_argument("--config", type=str, default="config",
+                    help="Config folder name")
 
     return parser.parse_args()
 
@@ -88,14 +94,15 @@ def train():
     dataset_path = args.dataset
     pretrained_path = args.pretrained
     policy_name = args.policy
+    config_folder = args.config
 
     # Load configs
-    dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset("configs/dataset.yaml")
-    train_cfg, normalization_cfg = get_configs_training("configs/train.yaml")
-    models_cfg = get_configs_models("configs/models.yaml")
+    dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(f"configs/{config_folder}/dataset.yaml")
+    train_cfg, normalization_cfg = get_configs_training(f"configs/{config_folder}/train.yaml")
+    models_cfg = get_configs_models(f"configs/{config_folder}/models.yaml")
 
     # Get folders to save weights and tensorboard logs
-    checkpoints_dir, tensorboard_dir, tsbrd_writer = set_output_folders_train(policy_name, dataset_path)
+    checkpoints_dir, tensorboard_dir, tsbrd_writer = set_output_folders_train(policy_name, dataset_path, config_folder)
 
     # create CSV file to store training losses
     csv_path = os.path.join(checkpoints_dir, "loss_log.csv")
@@ -172,7 +179,7 @@ def train():
         )
                             
         # Get episodes stats
-        episode_stats_path = Path(dataset_path) / "meta" / "episodes_stats_transformed.jsonl"
+        episode_stats_path = Path(f"configs/{config_folder}") / "episodes_stats_transformed.jsonl"
         episodes_stats = load_episodes_stats_patch(episode_stats_path)
         # Aggregate episodes stats in a unique global stats
         new_dataset_stats = aggregate_stats([episodes_stats[ep] for ep in train_ep])
@@ -182,7 +189,6 @@ def train():
 
         # Setup policy
         policy = make_policy(policy_name, cfg, dataset_stats=new_dataset_stats)
-
 
     # Set training mode
     policy.train() # during training layers like Dropout or BatchNorm are ON 
@@ -234,12 +240,32 @@ def train():
 
             # batch["observation.images"] = torch.stack(cams, dim=1)
 
+
+
+            # for k in list(batch.keys()):
+            #     if k.startswith("observation."):
+            #         # Replace time sequence with last timestep
+            #         batch[k] = batch[k][:, -1]    # (B, C, H, W)
+
+
+            # if policy.config.image_features:
+            #     batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
+            #     batch["observation.images"] = [batch[key] for key in policy.config.image_features]
+            #     print(len(batch["observation.images"]))
+            #     print(batch["observation.images"][0].shape)
+
+
+
             # # print all keys in dataset
             # for k, v in batch.items():
             #     if isinstance(v, torch.Tensor):
             #         print(k, v.shape)
             #     else:
             #         print(k, type(v))
+
+
+            
+
 
 
             # Computes the loss (and optionally predictions)
@@ -336,3 +362,88 @@ def train():
 if __name__ == "__main__":
     
     train()
+
+
+
+# ## DP
+
+# def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, None]:
+
+#     """Run the batch through the model and compute the loss for training or validation."""
+
+#     batch = self.normalize_inputs(batch)
+#     if self.config.image_features:
+#         batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
+#         batch["observation.images"] = torch.stack(
+#             [batch[key] for key in self.config.image_features], dim=-4
+#         )
+#     batch = self.normalize_targets(batch)
+#     loss = self.diffusion.compute_loss(batch)
+
+#     return loss, None
+
+# def compute_loss(self, batch: dict[str, Tensor]) -> Tensor:
+
+#     """
+#     This function expects `batch` to have (at least):
+#     {
+#         "observation.state": (B, n_obs_steps, state_dim)
+
+#         "observation.images": (B, n_obs_steps, num_cameras, C, H, W)
+#             AND/OR
+#         "observation.environment_state": (B, environment_dim)
+
+#         "action": (B, horizon, action_dim)
+#     """
+
+
+
+# ## ACT
+
+#     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, dict]:
+
+#         """Run the batch through the model and compute the loss for training or validation."""
+
+#         batch = self.normalize_inputs(batch)
+#         if self.config.image_features:
+#             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
+#             batch["observation.images"] = [batch[key] for key in self.config.image_features]
+
+#         batch = self.normalize_targets(batch)
+#         actions_hat, (mu_hat, log_sigma_x2_hat) = self.model(batch)
+
+#         l1_loss = (
+#             F.l1_loss(batch["action"], actions_hat, reduction="none") * ~batch["action_is_pad"].unsqueeze(-1)
+#         ).mean()
+
+#         loss_dict = {"l1_loss": l1_loss.item()}
+
+#         if self.config.use_vae:
+#             loss_dict["kld_loss"] = mean_kld.item()
+#             loss = l1_loss + mean_kld * self.config.kl_weight
+#         else:
+#             loss = l1_loss
+
+#         return loss, loss_dict
+    
+
+#     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:
+
+#         """A forward pass through the Action Chunking Transformer (with optional VAE encoder).
+
+#         `batch` should have the following structure:
+#         {
+#             [robot_state_feature] (optional): (B, state_dim) batch of robot states.
+
+#             [image_features]: (B, n_cameras, C, H, W) batch of images.
+#                 AND/OR
+#             [env_state_feature]: (B, env_dim) batch of environment states.
+
+#             [action_feature] (optional, only if training with VAE): (B, chunk_size, action dim) batch of actions.
+#         }
+
+#         Returns:
+#             (B, chunk_size, action_dim) batch of action sequences
+#             Tuple containing the latent PDF's parameters (mean, log(σ²)) both as (B, L) tensors where L is the
+#             latent dimension.
+#         """

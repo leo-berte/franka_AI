@@ -7,8 +7,7 @@ import numpy as np
 
 # TODO: 
 
-# 2) check griper 0-1 chiuso - aperto
-
+# 0) check griper 0-1 chiuso - aperto
 
 # 1) add relative vs absolute cart pose as actions/state
 
@@ -81,20 +80,20 @@ class CustomTransforms():
 
         # training image augmentations
         train_tf = torch.nn.Sequential(
-            K.ColorJitter(
-                brightness=vis_aug_cfg["color_jitter"]["brightness"],
-                contrast=vis_aug_cfg["color_jitter"]["contrast"],
-                saturation=vis_aug_cfg["color_jitter"]["saturation"],
-                hue=vis_aug_cfg["color_jitter"]["hue"],
-                p=vis_aug_cfg["color_jitter"]["p"],
-                same_on_batch=True,
-                ),
-            K.RandomGaussianBlur(
-                kernel_size=tuple(vis_aug_cfg["gaussian_blur"]["kernel_size"]),
-                sigma=tuple(vis_aug_cfg["gaussian_blur"]["sigma"]),
-                p=vis_aug_cfg["gaussian_blur"]["p"],
-                same_on_batch=True,
-                ),
+            # K.ColorJitter(
+            #     brightness=vis_aug_cfg["color_jitter"]["brightness"],
+            #     contrast=vis_aug_cfg["color_jitter"]["contrast"],
+            #     saturation=vis_aug_cfg["color_jitter"]["saturation"],
+            #     hue=vis_aug_cfg["color_jitter"]["hue"],
+            #     p=vis_aug_cfg["color_jitter"]["p"],
+            #     same_on_batch=True,
+            #     ),
+            # K.RandomGaussianBlur(
+            #     kernel_size=tuple(vis_aug_cfg["gaussian_blur"]["kernel_size"]),
+            #     sigma=tuple(vis_aug_cfg["gaussian_blur"]["sigma"]),
+            #     p=vis_aug_cfg["gaussian_blur"]["p"],
+            #     same_on_batch=True,
+            #     ),
             K.RandomAffine(
                 degrees=vis_aug_cfg["random_affine"]["degrees"],
                 translate=tuple(vis_aug_cfg["random_affine"]["translate"]),
@@ -180,8 +179,8 @@ class CustomTransforms():
             if k in self.feature_groups["VISUAL"]:
                 
                 v = v.to(torch.float32) # convert data to tensor float32
-                # sample[k] = self.img_tf_train(v) if self.train else self.img_tf_inference(v)
-                sample[k] = self.img_tf_inference(v) # avoid always image augmentations for now
+                sample[k] = self.img_tf_train(v) if self.train else self.img_tf_inference(v)
+                sample[k] = torch.zeros_like(sample[k])
 
             if k in self.feature_groups["STATE"]:
 

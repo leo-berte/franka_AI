@@ -84,7 +84,8 @@ def make_dataloader(
     # Extract parameters
     batch_size         = dataloader_cfg["batch_size"]
     shuffle            = dataloader_cfg["shuffle"]
-    train_split        = dataloader_cfg["train_split"]
+    train_split_ratio  = dataloader_cfg["train_split_ratio"] 
+    val_split_ratio    = dataloader_cfg["val_split_ratio"]
     num_workers        = dataloader_cfg["num_workers"]
     prefetch_factor    = dataloader_cfg["prefetch_factor"]
     seed_val           = dataloader_cfg["seed_val"]
@@ -108,11 +109,16 @@ def make_dataloader(
     episode_ids = list(range(num_episodes))
     random.shuffle(episode_ids)
     
+    # Consistency check
+    if train_split_ratio +  val_split_ratio > 1.0:
+        raise ValueError("train_split_ratio + val_split_ratio must not be greater than 1.0.")
+
     # Split indeces for training and validation
-    num_train_episodes = int(num_episodes * train_split)
+    num_train_episodes = int(num_episodes * train_split_ratio)
+    num_val_episodes = int(num_episodes * val_split_ratio)
     train_episodes = episode_ids[:num_train_episodes]
-    val_episodes = episode_ids[num_train_episodes:]
-    
+    val_episodes = episode_ids[num_train_episodes:num_train_episodes + num_val_episodes]
+
     # Load the raw dataset (hub or local)
     train_ds = LeRobotDatasetPatch(
         repo_id=repo_id,

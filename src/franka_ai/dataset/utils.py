@@ -11,7 +11,6 @@ from lerobot.configs.types import FeatureType
 
 # TODO: 
 # 1) Do I want images close to each others or far in time? 
-# Test dataset patch
 
 
 

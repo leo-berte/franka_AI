@@ -11,8 +11,8 @@ from franka_ai.models.utils import get_configs_models
 """
 Run the code: 
 
-python src/franka_ai/tests/test_dataloader.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers --policy diffusion
-python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/today_data/today_outliers --policy diffusion
+python src/franka_ai/tests/test_dataloader.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers --policy diffusion --config config1
+python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/today_data/today_outliers --policy diffusion --config config1
 
 Visualize lerobot dataset uploaded in HF:
 
@@ -32,29 +32,33 @@ def parse_args():
 
     # set parser
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--dataset",
+
+    parser.add_argument("--dataset",
         type=str,
         required=True,
-        help="Absolute path to the dataset folder"
-    )
+        help="Absolute path to the dataset folder")
+    
     parser.add_argument("--policy", type=str, default="diffusion",
                     choices=["diffusion", "act"],
                     help="Policy name")
+    
+    parser.add_argument("--config", type=str, default="config",
+                    help="Config folder name")
+    
     args = parser.parse_args()
 
-    # return absolute path to the dataset
-    return args.dataset, args.policy
+    # return args
+    return args.dataset, args.policy, args.config
 
 
 def main():
 
     # Get path to dataset and policy name
-    dataset_path, policy_name = parse_args()
+    dataset_path, policy_name, config_folder= parse_args()
 
     # Get configs
-    dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset("configs/dataset.yaml")
-    models_cfg = get_configs_models("configs/models.yaml")
+    dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(f"configs/{config_folder}/dataset.yaml")
+    models_cfg = get_configs_models(f"configs/{config_folder}/models.yaml")
 
     # Prepare transforms for training
     transforms_train = CustomTransforms(

@@ -17,8 +17,8 @@ from franka_ai.models.utils import get_configs_models
 """
 Run the code: 
 
-python src/franka_ai/dataset/generate_updated_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
-python src/franka_ai/dataset/generate_updated_stats.py --dataset /workspace/data/today_data/today_outliers
+python src/franka_ai/dataset/generate_updated_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers --config config1
+python src/franka_ai/dataset/generate_updated_stats.py --dataset /workspace/data/today_data/today_outliers --config config1
 """
 
 # TODO:
@@ -29,16 +29,19 @@ def parse_args():
 
     # set parser
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--dataset",
+
+    parser.add_argument("--dataset",
         type=str,
         required=True,
-        help="Absolute path to the dataset folder"
-    )
+        help="Absolute path to the dataset folder")
+        
+    parser.add_argument("--config", type=str, default="config",
+                help="Config folder name")
+    
     args = parser.parse_args()
 
-    # return absolute path to the dataset
-    return args.dataset
+    # return absolute path to the dataset and config folder name
+    return args.dataset, args.config
 
 def compute_episode_stats_streaming(dataloader, keep_keys, feature_groups, batch_size, N_history):
 
@@ -148,17 +151,17 @@ def compute_episode_stats_streaming(dataloader, keep_keys, feature_groups, batch
 def main(): 
     
     # Get path to dataset
-    dataset_path = parse_args()
+    dataset_path, config_folder = parse_args()
 
     # Get episode indeces
     meta = LeRobotDatasetMetadata(repo_id=None, root=dataset_path)
     all_eps = list(meta.episodes.keys()) # list of episode indeces
 
     # Set output folder to save new stats
-    output_path = Path(dataset_path) / "meta" / "episodes_stats_transformed.jsonl"
+    output_path = Path(f"configs/{config_folder}") / "episodes_stats_transformed.jsonl"
 
     # Get configs
-    dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset("configs/dataset.yaml")
+    dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(f"configs/{config_folder}/dataset.yaml")
     
     # Override values for episode stats generation
     

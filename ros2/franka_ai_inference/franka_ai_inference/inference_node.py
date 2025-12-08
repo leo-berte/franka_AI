@@ -44,7 +44,7 @@ class FrankaInference(Node):
         super().__init__('FrankaInference')
 
         # Get configs about inference
-        inference_cfg = get_configs_inference("../workspace/configs/inference.yaml")
+        inference_cfg = get_configs_inference("../workspace/configs/config/inference.yaml")
 
         # Get parameter values from inference.yaml
         self.policy_rate = inference_cfg["policy_rate"]

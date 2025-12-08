@@ -21,7 +21,7 @@ def get_configs_training(config_rel_path):
 
     return train_cfg, normalization_cfg
     
-def set_output_folders_train(policy_type, dataset_path):
+def set_output_folders_train(policy_type, dataset_path, config_folder):
 
     """Create timestamped output folder structure for training run."""
     
@@ -46,9 +46,9 @@ def set_output_folders_train(policy_type, dataset_path):
     writer = SummaryWriter(log_dir=tensorboard_dir)
 
     # Save configs inside checkpoint folder for reproducibility
-    copyfile("configs/dataset.yaml", os.path.join(checkpoints_dir, "dataset.yaml"))
-    copyfile("configs/train.yaml", os.path.join(checkpoints_dir, "train.yaml"))
-    copyfile("configs/models.yaml", os.path.join(checkpoints_dir, "models.yaml"))
+    copyfile(f"configs/{config_folder}/dataset.yaml", os.path.join(checkpoints_dir, "dataset.yaml"))
+    copyfile(f"configs/{config_folder}/train.yaml", os.path.join(checkpoints_dir, "train.yaml"))
+    copyfile(f"configs/{config_folder}/models.yaml", os.path.join(checkpoints_dir, "models.yaml"))
 
     return checkpoints_dir, tensorboard_dir, writer
 
