@@ -18,13 +18,6 @@ Run the code: python src/franka_ai/inference/evaluate.py
 """
 
 
-# TODO:
-# 0) define metrics to measure how much inference code is efficient (measure time, memory, ..)
-
-
-
-
-
 def evaluate():
 
     """

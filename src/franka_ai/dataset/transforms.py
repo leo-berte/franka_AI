@@ -7,7 +7,6 @@ import numpy as np
 
 # TODO: 
 
-# 1) check rviz depth
 # 2) check griper 0-1 chiuso - aperto
 
 

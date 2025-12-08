@@ -11,6 +11,8 @@ from franka_ai.dataset.utils import load_episodes_stats_patch, LeRobotDatasetPat
 Run the code: 
 
 python src/franka_ai/tests/test_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
+python src/franka_ai/tests/test_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers
+
 python src/franka_ai/tests/test_stats.py --dataset /workspace/data/today_data/today_outliers
 """
 
@@ -63,7 +65,7 @@ def main():
     dataset_path = get_dataset_path()
 
     # Set episodes indeces to load
-    episodes_idx = [0,1,2]
+    episodes_idx = [0,1]
 
     ## 1) Transformed stats
 

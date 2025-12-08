@@ -29,12 +29,12 @@ Play rosbag: ros2 bag play bag1.db3
 
 # TODO:
 
-# build_obs synchronization and feed directly the model observation --> generate_actions(obs) with in:(B, N_hist, D) --> out:(N_chunk, D)
-
-# traj stitching
-# uso filtered o output diretto della policy? --> FABIO
-# PAST_ACTIONS viene ricreata da output policy.. ma come farlo automaticamente da yaml senza riscrivere codice per ogni ablation? --> FABIO
+# PAST_ACTIONS viene ricreata da output policy.. creare transofrm_inverse per gestirlo senza riscrivere codice per ogni ablation
 # --> questo viene fatto per observation perchè ricreo STATE del dataset e transformrs poi lo trattano based on yaml
+
+# 0) build_obs synchronization and feed directly the model observation --> generate_actions(obs) with in:(B, N_hist, D) --> out:(N_chunk, D)
+# 1) traj stitching
+
 
 
 class FrankaInference(Node):
@@ -68,7 +68,6 @@ class FrankaInference(Node):
 
         # Prepare transforms for inference
         self.tf_inference = CustomTransforms(
-            dataloader_cfg=dataloader_cfg,
             dataset_cfg=dataset_cfg,
             transforms_cfg=transforms_cfg,
             model_cfg=models_cfg[policy_name],

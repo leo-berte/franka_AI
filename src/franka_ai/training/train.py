@@ -39,14 +39,16 @@ python -m tensorboard.main --logdir ../outputs/train/example_pusht_diffusion/ten
 
 # TODO:
 
-# 1) Optimize training (see notes)
+# to fix: pesi salvati da dentro il docker poi sono accessibili? 
 
-# pesi salvati da dentro il docker poi sono accessibili? --> FABIO
+# train on SINGLE dataset --> STATE only --> 1 episode reply
+# train on SINGLE dataset --> full dataset for single bag pick & place
+
 
 # try ACT
 
-# Handle correctly pre-training (i.e. I add Fext in input features for example)
-
+# 1) Handle correctly pre-training (i.e. I add Fext in input features for example)
+# 2) Optimize training (see notes)
 
 
 
@@ -204,23 +206,6 @@ def train():
     avg_val_loss = float("inf")
 
     print("Starting training loop...")
-
-
-
-
-    # # Save checkpoint
-    # ckpt_path = os.path.join(checkpoints_dir, f"step_{step:08d}.pt")
-    # # torch.save(policy.state_dict(), ckpt_path)
-    # policy.save_pretrained(ckpt_path)
-
-    # done = True
-
-
-
-
-
-
-
 
     while not done:
 

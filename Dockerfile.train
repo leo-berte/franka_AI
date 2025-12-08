@@ -30,7 +30,8 @@ RUN pip install git+https://github.com/huggingface/lerobot.git@790d6740babad5739
 RUN pip install --force-reinstall "datasets==3.6.0"
 RUN pip install "pymunk<6.3.0"
 RUN pip install rerun-sdk==0.14
-RUN pip3 install scipy kornia matplotlib tensorboard
+RUN pip install scipy kornia matplotlib tensorboard
+RUN pip install --upgrade draccus==0.10.0
 
 # Install package in editable mode
 RUN pip install -e .

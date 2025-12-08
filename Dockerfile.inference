@@ -33,6 +33,9 @@ RUN apt-get update && apt-get install -y \
     ros-humble-rmw-cyclonedds-cpp \
     && rm -rf /var/lib/apt/lists/*
 
+# Make python3 the default
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
 # ==============================
 # Python workspace
 # ==============================
@@ -44,14 +47,16 @@ COPY configs/ /workspace/configs/
 COPY src/franka_ai/ /workspace/src/franka_ai/
 
 # Upgrade pip + install deps
-RUN pip3 install --upgrade pip setuptools wheel
+RUN pip install --upgrade pip setuptools wheel
 
 # HuggingFace LeRobot + other deps
-RUN pip3 install git+https://github.com/huggingface/lerobot.git@790d6740babad57398e20a956a23068d377640f0
-RUN pip3 install datasets==3.6.0 "pymunk<6.3.0" rerun-sdk==0.14 scipy kornia matplotlib tensorboard
+RUN pip install git+https://github.com/huggingface/lerobot.git@790d6740babad57398e20a956a23068d377640f0
+RUN pip install --force-reinstall "datasets==3.6.0"
+RUN pip install --upgrade draccus==0.10.0
+RUN pip install "pymunk<6.3.0" rerun-sdk==0.14 scipy kornia matplotlib tensorboard
 
 # Install franka_ai library in editable mode
-RUN pip3 install -e .
+RUN pip install -e .
 
 # ==============
 # ROS2 workspace 
