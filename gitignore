@@ -1,9 +1,0 @@
-*.pyc
-__pycache__/
-franka_ai.egg-info
-outputs
-data
-
-# Ignore temporary subfolders inside config/ besides the default config/config/
-configs/*/
-!configs/config/
