@@ -91,7 +91,7 @@ Once inside the container, you can execute the different scripts.
 Creates the train/validation split for the selected dataset and verifies that samples can be loaded correctly through the dataloader after applying custom transforms.
 
 ```bash
-python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/today_data/today_outliers
+python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/demo1 --policy diffusion --config config1
 ```
 
 ### 2.2 Generate transformed dataset stats
@@ -99,7 +99,7 @@ python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/today_da
 Computes new dataset statistics after applying the custom transforms. The policy will automatically use the generated file *episode_stats_transformed.jsonl*.
 
 ```bash
-python src/franka_ai/dataset/generate_updated_stats.py --dataset /workspace/data/today_data/today_outliers
+python src/franka_ai/dataset/generate_updated_stats.py --dataset /workspace/data/demo1 --config config1
 ```
 
 ### 2.3 Test transformed stats
@@ -107,7 +107,7 @@ python src/franka_ai/dataset/generate_updated_stats.py --dataset /workspace/data
 Compares the original statistics (*episode_stats.jsonl*) with the transformed ones (*episode_stats_transformed.jsonl*) to verify correctness and consistency.
 
 ```bash
-python src/franka_ai/tests/test_stats.py --dataset /workspace/data/today_data/today_outliers
+python src/franka_ai/tests/test_stats.py --dataset /workspace/data/demo1
 ```
 
 ### 2.4 Train
@@ -115,9 +115,10 @@ python src/franka_ai/tests/test_stats.py --dataset /workspace/data/today_data/to
 Starts training for the selected policy using the specified dataset path. Optionally, you can provide a directory containing pretrained checkpoints.
 
 ```bash
-python src/franka_ai/training/train.py --dataset /workspace/data/today_data/today_outliers
-                                       --pretrained /workspace/outputs/checkpoints
-                                       --policy ACT
+python src/franka_ai/training/train.py --dataset /workspace/data/demo1
+                                       --pretrained /workspace/outputs/checkpoints/demo1_xxx/model.pt
+                                       --policy diffusion
+                                       --config config1
 ```
 
 ## 3. Run inference scripts
