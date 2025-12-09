@@ -3,16 +3,10 @@
 # ---------
 
 inference:
-
-  # from conda
-  # pretrained_policy_abs_path: "/workspace/outputs/checkpoints/today_outliers_diffusion_2025-12-05_11-23-23/best_model.pt"
-  # configs_dataset_rel_path: "../workspace/outputs/checkpoints/today_outliers_diffusion_2025-12-05_11-23-23/dataset.yaml"  # saved with model weights
-  # configs_models_rel_path: "../workspace/outputs/checkpoints/today_outliers_diffusion_2025-12-05_11-23-23/models.yaml"    # saved with model weights
-
-  # from docker 
-  pretrained_policy_abs_path: "/workspace/outputs/checkpoints/today_outliers_diffusion_2025-12-08_08-42-58/best_model.pt"
-  configs_dataset_rel_path: "../workspace/outputs/checkpoints/today_outliers_diffusion_2025-12-08_08-42-58/dataset.yaml"  # saved with model weights
-  configs_models_rel_path: "../workspace/outputs/checkpoints/today_outliers_diffusion_2025-12-08_08-42-58/models.yaml"    # saved with model weights
+ 
+  pretrained_policy_abs_path: "/workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-09_11-04-33/best_model.pt"
+  configs_dataset_rel_path: "../workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-09_11-04-33/dataset.yaml"  # saved with model weights
+  configs_models_rel_path: "../workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-09_11-04-33/models.yaml"    # saved with model weights
 
   policy_rate: 30 # for now, it shall be the same as: fps_sampling_chunk
   fps_dataset: 29.995 # it shall be the fps got from the dataset (info.json) used for training

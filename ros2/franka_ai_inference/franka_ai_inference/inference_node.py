@@ -370,7 +370,7 @@ class FrankaInference(Node):
         with torch.inference_mode():
             action = self.policy.select_action(obs) # (B, D) --> (D, )
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
-            print("action shape: ", action.shape)
+            print("policy action: ", action)
 
         # Move to CPU and convert to numpy
         action = action.squeeze(0).to("cpu")
@@ -390,13 +390,13 @@ class FrankaInference(Node):
         # Set cart pose action
         cart_msg = PoseStamped()
         cart_msg.header.stamp = self.get_clock().now().to_msg()
-        cart_msg.pose.position.x = action_np[0]
-        cart_msg.pose.position.y = action_np[1]
-        cart_msg.pose.position.z = action_np[2]
-        cart_msg.pose.orientation.x = quat_np[0]
-        cart_msg.pose.orientation.y = quat_np[1]
-        cart_msg.pose.orientation.z = quat_np[2]
-        cart_msg.pose.orientation.w = quat_np[3]
+        cart_msg.pose.position.x = float(action_np[0])
+        cart_msg.pose.position.y = float(action_np[1])
+        cart_msg.pose.position.z = float(action_np[2])
+        cart_msg.pose.orientation.x = float(quat_np[0])
+        cart_msg.pose.orientation.y = float(quat_np[1])
+        cart_msg.pose.orientation.z = float(quat_np[2])
+        cart_msg.pose.orientation.w = float(quat_np[3])
 
         # Publish
         self.cart_pose_action_pub.publish(cart_msg)
@@ -404,7 +404,7 @@ class FrankaInference(Node):
         # Set gripper action
         gripper_msg = GripperWidth()
         gripper_msg.header.stamp = self.get_clock().now().to_msg()
-        gripper_msg.width = action_np[-1]
+        gripper_msg.width = float(action_np[-1])
 
         # Publish
         self.gripper_action_pub.publish(gripper_msg)

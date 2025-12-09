@@ -119,6 +119,7 @@ def train():
     save_ckpt_freq  = train_cfg["save_ckpt_freq"]    # save checkpoints
     learning_rate   = train_cfg["learning_rate"] 
     lr_warmup_steps = train_cfg["lr_warmup_steps"]
+    weight_decay    = train_cfg["weight_decay"]
 
     # Consistency checks
     if eval_freq % log_freq != 0:
@@ -196,7 +197,7 @@ def train():
     policy.to(device)
 
     # Optimizer
-    optimizer = torch.optim.AdamW(policy.parameters(), lr=learning_rate, betas=(0.9, 0.999), weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(policy.parameters(), lr=learning_rate, betas=(0.9, 0.999), weight_decay=weight_decay)
 
     # Linear LR scheduler for warmup (from start_factor*lr to lr)
     warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=lr_warmup_steps)
@@ -219,7 +220,7 @@ def train():
     best_val_loss = float("inf")
     avg_val_loss = float("inf")
 
-    print("Starting training loop...")
+    print("\nStarting training loop...\n")
 
     while not done:
 
@@ -296,13 +297,14 @@ def train():
 
                 # Save checkpoint
                 ckpt_path = os.path.join(checkpoints_dir, f"step_{step:08d}.pt")
-                # torch.save(policy.state_dict(), ckpt_path)
                 policy.save_pretrained(ckpt_path)
 
                 # Update symlink if it's the new best
                 best_val_loss = update_best_model_symlink(checkpoints_dir, ckpt_path, best_val_loss, avg_val_loss, step)
 
+            # Increment step
             step += 1
+
             if step > training_steps:
                 done = True
                 break

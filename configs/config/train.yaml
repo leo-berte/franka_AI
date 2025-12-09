@@ -9,7 +9,8 @@ training:
   eval_freq: 2000          # logs eval loss
   save_ckpt_freq: 6000     # save checkpoints
   learning_rate: 0.0005
-  lr_warmup_steps: 500
+  lr_warmup_steps: 50
+  weight_decay: 0.0001
 
 
 # -------------
