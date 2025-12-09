@@ -7,6 +7,11 @@ import yaml
 # 1) magari in input setup_folders accetta policy name o percorso di caricamento pesi dall utente?
 
 
+
+# ---------
+# FUNCTIONS
+# ---------
+
 def get_configs_inference(config_rel_path):
 
     # set path
@@ -19,7 +24,6 @@ def get_configs_inference(config_rel_path):
     inference_cfg = cfg["inference"]
 
     return inference_cfg
-
 
 def setup_eval_folder():
 

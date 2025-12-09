@@ -7,6 +7,10 @@ from torch.utils.tensorboard import SummaryWriter
 from lerobot.configs.types import FeatureType, PolicyFeature, NormalizationMode
 
 
+# ---------
+# FUNCTIONS
+# ---------
+
 def get_configs_training(config_rel_path):
 
     # set path

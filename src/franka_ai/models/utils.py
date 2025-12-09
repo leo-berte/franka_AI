@@ -3,6 +3,10 @@ import os
 import yaml
 
 
+# ---------
+# FUNCTIONS
+# ---------
+
 def get_configs_models(config_rel_path):
 
     # set path

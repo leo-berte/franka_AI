@@ -1,10 +1,12 @@
-import torchvision.transforms as T
-import torch
+from pathlib import Path
+from typing import Callable
+import logging
 import time
 import yaml
 import os
 
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.common.datasets.compute_stats import aggregate_stats
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, MultiLeRobotDataset
 from lerobot.common.datasets.utils import dataset_to_policy_features, load_jsonlines, cast_stats_to_numpy
 from lerobot.configs.types import FeatureType
 
@@ -13,6 +15,9 @@ from lerobot.configs.types import FeatureType
 # 1) Do I want images close to each others or far in time? 
 
 
+# -------
+# PATCHES
+# -------
 
 class LeRobotDatasetPatch(LeRobotDataset):
     
@@ -23,6 +28,65 @@ class LeRobotDatasetPatch(LeRobotDataset):
         current_ep_idx = self.episodes.index(ep_idx) if self.episodes is not None else ep_idx
         return super()._get_query_indices(idx, current_ep_idx)
 
+
+class MultiLeRobotDatasetPatch(MultiLeRobotDataset):
+
+    def init(
+        self,
+        repo_ids: list[str],
+        root: str | Path | None = None,
+        episodes: dict | None = None,
+        image_transforms: Callable | None = None,
+        delta_timestamps: dict[list[float]] | None = None,
+        tolerances_s: dict | None = None,
+        download_videos: bool = True,
+        video_backend: str | None = None,
+    ):
+        super().init(repo_ids, root, episodes, image_transforms, delta_timestamps, tolerances_s, download_videos, video_backend)
+
+        # Construct the underlying datasets passing everything but `transform` and `delta_timestamps` which are handled by this class.
+        self._datasets = [
+            LeRobotDatasetPatch(
+                repo_id,
+                root=self.root / repo_id,
+                episodes=episodes[repo_id] if episodes else None,
+                image_transforms=image_transforms,
+                delta_timestamps=delta_timestamps,
+                tolerance_s=self.tolerances_s[repo_id],
+                download_videos=download_videos,
+                video_backend=video_backend,
+            )
+            for repo_id in repo_ids
+        ]
+
+        # Disable any data keys that are not common across all of the datasets. Note: we may relax this
+        # restriction in future iterations of this class. For now, this is necessary at least for being able
+        # to use PyTorch's default DataLoader collate function.
+        self.disabled_features = set()
+        intersection_features = set(self._datasets[0].features)
+        for ds in self._datasets:
+            intersection_features.intersection_update(ds.features)
+        if len(intersection_features) == 0:
+            raise RuntimeError(
+                "Multiple datasets were provided but they had no keys common to all of them. "
+                "The multi-dataset functionality currently only keeps common keys."
+            )
+        for repo_id, ds in zip(self.repo_ids, self._datasets, strict=True):
+            extra_keys = set(ds.features).difference(intersection_features)
+            logging.warning(
+                f"keys {extra_keys} of {repo_id} were disabled as they are not contained in all the "
+                "other datasets."
+            )
+            self.disabled_features.update(extra_keys)
+
+        self.image_transforms = image_transforms
+        self.delta_timestamps = delta_timestamps
+        self.stats = aggregate_stats([dataset.meta.stats for dataset in self._datasets])
+
+
+# ---------
+# FUNCTIONS
+# ---------
 
 def build_delta_timestamps(feature_groups, N_h, N_c, fps_dataset, fps_sampling_hist=10, fps_sampling_chunk=10):
 
@@ -124,7 +188,6 @@ def print_dataset_info(ds, ds_type):
     print(f"Number of total episodes: {ds.meta.total_episodes}")
     print(f"Number of selected episodes: {ds.num_episodes}")
     print(f"Number of fps: {ds.fps}")
-    print(f"Camera keys: {ds.meta.camera_keys}")
     features = features = dataset_to_policy_features(ds.features)
     output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
     input_features = {key: ft for key, ft in features.items() if key not in output_features}
@@ -132,7 +195,6 @@ def print_dataset_info(ds, ds_type):
     print("Input features: \n", input_features)
     # print("Full features:")
     # print(ds.features)
-    print("\n")
 
 def benchmark_loader(loader, num_batches=100):
 

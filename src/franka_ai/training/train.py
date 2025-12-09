@@ -50,7 +50,7 @@ http://localhost:6006/#timeseries
 # try ACT
 
 # 1) Handle correctly pre-training (i.e. I add Fext in input features for example)
-# 2) Optimize training (see notes) --> at least cosine sim o learning rate scheduler
+# 2) Optimize training (see notes
 
 
 
@@ -111,13 +111,14 @@ def train():
         csv_writer.writerow(["step", "train_loss", "val_loss"])
 
     # Set parameters from config
-    device = torch.device(dataloader_cfg["device"])
-    seed_val = dataloader_cfg["seed_val"]
-    training_steps = train_cfg["training_steps"] # number of training steps [60000]
-    log_freq = train_cfg["log_freq"] # logs train loss, gradNorm, lr [200]
-    eval_freq = train_cfg["eval_freq"] # logs eval loss [2000]
-    save_ckpt_freq = train_cfg["save_ckpt_freq"] # 20000 # save checkpoints [20000]
-    learning_rate = train_cfg["learning_rate"]
+    device          = torch.device(dataloader_cfg["device"])
+    seed_val        = dataloader_cfg["seed_val"]
+    training_steps  = train_cfg["training_steps"]    # number of training steps
+    log_freq        = train_cfg["log_freq"]          # logs train loss, gradNorm, lr
+    eval_freq       = train_cfg["eval_freq"]         # logs eval loss
+    save_ckpt_freq  = train_cfg["save_ckpt_freq"]    # save checkpoints
+    learning_rate   = train_cfg["learning_rate"] 
+    lr_warmup_steps = train_cfg["lr_warmup_steps"]
 
     # Consistency checks
     if eval_freq % log_freq != 0:
@@ -194,12 +195,19 @@ def train():
     policy.train() # during training layers like Dropout or BatchNorm are ON 
     policy.to(device)
 
-    # Then we create our optimizer and dataloader for offline training.
-    optimizer = torch.optim.Adam(policy.parameters(), lr=learning_rate) 
+    # Optimizer
+    optimizer = torch.optim.AdamW(policy.parameters(), lr=learning_rate, betas=(0.9, 0.999), weight_decay=1e-4)
 
-    # -------------------
+    # Linear LR scheduler for warmup (from start_factor*lr to lr)
+    warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=lr_warmup_steps)
+    # Cosine LR scheduler after warmup (from lr to eta_min)
+    cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=training_steps - lr_warmup_steps, eta_min=learning_rate * 0.1)
+    # Sequential LR scheduler
+    scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[lr_warmup_steps])
+
+    # -------------
     # TRAINING LOOP
-    # -------------------
+    # -------------
 
     step = 0
     done = False
@@ -221,59 +229,16 @@ def train():
             step_start = time.perf_counter()
 
             # Move data to device
-            batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
-
-            # batch["observation.state"].squeeze(1)
-            # batch["observation.images.front_cam1"].squeeze(1)
-            # batch["observation.images.front_cam2"].squeeze(1)
-            # batch["observation.images.front_cam3"].squeeze(1)
-            # batch["observation.images.gripper_camera"].squeeze(1)
-
-            # batch["observation.state"] = batch["observation.state"].squeeze(1)
-
-            # cams = [
-            #     batch.pop("observation.images.front_cam1").squeeze(1),
-            #     batch.pop("observation.images.front_cam2").squeeze(1),
-            #     batch.pop("observation.images.front_cam3").squeeze(1),
-            #     batch.pop("observation.images.gripper_camera").squeeze(1),
-            # ]
-
-            # batch["observation.images"] = torch.stack(cams, dim=1)
-
-
-
-            # for k in list(batch.keys()):
-            #     if k.startswith("observation."):
-            #         # Replace time sequence with last timestep
-            #         batch[k] = batch[k][:, -1]    # (B, C, H, W)
-
-
-            # if policy.config.image_features:
-            #     batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            #     batch["observation.images"] = [batch[key] for key in policy.config.image_features]
-            #     print(len(batch["observation.images"]))
-            #     print(batch["observation.images"][0].shape)
-
-
-
-            # # print all keys in dataset
-            # for k, v in batch.items():
-            #     if isinstance(v, torch.Tensor):
-            #         print(k, v.shape)
-            #     else:
-            #         print(k, type(v))
-
-
-            
-
-
+            batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}      
 
             # Computes the loss (and optionally predictions)
             loss, _ = policy.forward(batch)
 
             loss.backward() # compute gradients
-            running_grad_norm_sum +=clip_grad_norm_(policy.parameters(), max_norm=float("inf")).item() # measure gradients norm
+            total_norm = clip_grad_norm_(policy.parameters(), max_norm=1.0) # measure gradients norm and clip it
+            running_grad_norm_sum += total_norm
             optimizer.step() # do gradient step
+            scheduler.step()
             optimizer.zero_grad()
             
             # Stop and store timer
@@ -447,3 +412,52 @@ if __name__ == "__main__":
 #             Tuple containing the latent PDF's parameters (mean, log(σ²)) both as (B, L) tensors where L is the
 #             latent dimension.
 #         """
+
+
+
+
+
+
+
+
+
+
+            # batch["observation.state"].squeeze(1)
+            # batch["observation.images.front_cam1"].squeeze(1)
+            # batch["observation.images.front_cam2"].squeeze(1)
+            # batch["observation.images.front_cam3"].squeeze(1)
+            # batch["observation.images.gripper_camera"].squeeze(1)
+
+            # batch["observation.state"] = batch["observation.state"].squeeze(1)
+
+            # cams = [
+            #     batch.pop("observation.images.front_cam1").squeeze(1),
+            #     batch.pop("observation.images.front_cam2").squeeze(1),
+            #     batch.pop("observation.images.front_cam3").squeeze(1),
+            #     batch.pop("observation.images.gripper_camera").squeeze(1),
+            # ]
+
+            # batch["observation.images"] = torch.stack(cams, dim=1)
+
+
+
+            # for k in list(batch.keys()):
+            #     if k.startswith("observation."):
+            #         # Replace time sequence with last timestep
+            #         batch[k] = batch[k][:, -1]    # (B, C, H, W)
+
+
+            # if policy.config.image_features:
+            #     batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
+            #     batch["observation.images"] = [batch[key] for key in policy.config.image_features]
+            #     print(len(batch["observation.images"]))
+            #     print(batch["observation.images"][0].shape)
+
+
+
+            # # print all keys in dataset
+            # for k, v in batch.items():
+            #     if isinstance(v, torch.Tensor):
+            #         print(k, v.shape)
+            #     else:
+            #         print(k, type(v))
