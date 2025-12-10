@@ -23,15 +23,11 @@ from franka_ai.models.factory import get_policy_config_class, make_policy, get_p
 """
 Run the code: 
 
-python src/franka_ai/training/train.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single_outliers
-                                                     --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints/.....
-                                                     --config config1
-                                                     --policy diffusion
+python src/franka_ai/training/train.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single_outliers --config config1 --policy diffusion
+                                       --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints/.....
 
-python src/franka_ai/training/train.py --dataset /workspace/data/single_outliers
+python src/franka_ai/training/train.py --dataset /workspace/data/single_outliers --config config1 --policy diffusion
                                        --pretrained /workspace/outputs/checkpoints/....
-                                       --config config1
-                                       --policy diffusion
 
 Activate tensorboard (from where there is this code): 
 

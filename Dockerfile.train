@@ -23,6 +23,9 @@ COPY src/franka_ai/ /workspace/src/franka_ai/
 # Install Python deps
 RUN pip install --upgrade pip setuptools wheel
 
+# Install PyTorch + torchvision compatible with GTX 1080 (unecessary if using newer GPU)
+RUN pip install torch==2.9.0+cu126 torchvision==0.24.0+cu126 --index-url https://download.pytorch.org/whl/cu126
+
 # HuggingFace LeRobot pinned to specific commit
 RUN pip install git+https://github.com/huggingface/lerobot.git@790d6740babad57398e20a956a23068d377640f0
 
