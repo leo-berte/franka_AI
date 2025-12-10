@@ -227,6 +227,8 @@ def train():
         for batch in train_loader:
             
             # Sart timer
+            if device.type == "cuda":
+                torch.cuda.synchronize()
             step_start = time.perf_counter()
 
             # Move data to device
@@ -243,6 +245,8 @@ def train():
             optimizer.zero_grad()
             
             # Stop and store timer
+            if device.type == "cuda":
+                torch.cuda.synchronize()
             running_time_sum +=  time.perf_counter() - step_start
   
             # Accumulate training loss for averaging

@@ -62,29 +62,29 @@ dataset:
 transforms:
 
   visual:
-    img_resize: [150, 150]
+    img_resize: [800, 600]  # [150, 150]
     normalize: false
     augmentations:
       color_jitter:
-        brightness: 0.2
-        contrast: 0.2
-        saturation: 0.2
+        brightness: 0.1
+        contrast: 0.1
+        saturation: 0.1
         hue: 0.1
-        p: 0.8
+        p: 1.0 # 0.8
       gaussian_blur:
         kernel_size: [3, 3]
-        sigma: [0.1, 2.0]
-        p: 0.3
+        sigma: [0.1, 1.0]
+        p: 1.0 # 0.3
       random_affine:
         degrees: 5
         translate: [0.05, 0.05]
-        p: 0.5
+        p: 1.0 # 0.5
 
   state:
     augmentations:
       noise_std_dev:
-        joint_vel: 0.002        # σ ≈ 0.02 rad/s
-        joint_torque: 0.002     # σ ≈ 0.02 Nm
+        joint_vel: 0.02       # σ ≈ rad/s
+        joint_torque: 0.2     # σ ≈ Nm
     use_axis_angle: True
     use_past_actions: True
     include: # define observation state components

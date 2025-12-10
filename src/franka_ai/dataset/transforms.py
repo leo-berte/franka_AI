@@ -1,22 +1,15 @@
 import kornia.augmentation as K
-import torchvision.transforms as T
 import torch
-import numpy as np
 
 
 
 # TODO: 
 
-# 0) check griper 0-1 chiuso - aperto
+# Bring kornia on GPU? capire architettura se fattibile
+
+# 0) check gripper 0-1 chiuso - aperto
 
 # 1) add relative vs absolute cart pose as actions/state
-
-# 1) Check values resize, bright, ..
-# 6) bring kornia on GPU? Ma ha senso spostare i dati già su GPU qui? non fare lavoro doppio
-# 9) salva delle immagini post trasformazione nel training e vedi che forma hanno
-# 10) immagini post trasformazioni sono ancora in 0,1? xke datasets stats si aspetta quello
-
-
 
 
 class CustomTransforms():
@@ -80,20 +73,20 @@ class CustomTransforms():
 
         # training image augmentations
         train_tf = torch.nn.Sequential(
-            # K.ColorJitter(
-            #     brightness=vis_aug_cfg["color_jitter"]["brightness"],
-            #     contrast=vis_aug_cfg["color_jitter"]["contrast"],
-            #     saturation=vis_aug_cfg["color_jitter"]["saturation"],
-            #     hue=vis_aug_cfg["color_jitter"]["hue"],
-            #     p=vis_aug_cfg["color_jitter"]["p"],
-            #     same_on_batch=True,
-            #     ),
-            # K.RandomGaussianBlur(
-            #     kernel_size=tuple(vis_aug_cfg["gaussian_blur"]["kernel_size"]),
-            #     sigma=tuple(vis_aug_cfg["gaussian_blur"]["sigma"]),
-            #     p=vis_aug_cfg["gaussian_blur"]["p"],
-            #     same_on_batch=True,
-            #     ),
+            K.ColorJitter(
+                brightness=vis_aug_cfg["color_jitter"]["brightness"],
+                contrast=vis_aug_cfg["color_jitter"]["contrast"],
+                saturation=vis_aug_cfg["color_jitter"]["saturation"],
+                hue=vis_aug_cfg["color_jitter"]["hue"],
+                p=vis_aug_cfg["color_jitter"]["p"],
+                same_on_batch=True,
+                ),
+            K.RandomGaussianBlur(
+                kernel_size=tuple(vis_aug_cfg["gaussian_blur"]["kernel_size"]),
+                sigma=tuple(vis_aug_cfg["gaussian_blur"]["sigma"]),
+                p=vis_aug_cfg["gaussian_blur"]["p"],
+                same_on_batch=True,
+                ),
             K.RandomAffine(
                 degrees=vis_aug_cfg["random_affine"]["degrees"],
                 translate=tuple(vis_aug_cfg["random_affine"]["translate"]),
@@ -180,7 +173,7 @@ class CustomTransforms():
                 
                 v = v.to(torch.float32) # convert data to tensor float32
                 sample[k] = self.img_tf_train(v) if self.train else self.img_tf_inference(v)
-                sample[k] = torch.zeros_like(sample[k])
+                sample[k] = torch.zeros_like(sample[k]) # TEMP FOR KINEMATICS ONLY TEST
 
             if k in self.feature_groups["STATE"]:
 

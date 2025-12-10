@@ -124,7 +124,7 @@ def make_dataloader(
         repo_id=repo_id,
         root=dataset_path,   
         delta_timestamps=delta_timestamps,
-        episodes=[0] # train_episodes
+        episodes=[0] # train_episodes       ##### --> TEMP KINEMATICS ONLY TEST
     )
 
     # Load the raw dataset (hub or local)
@@ -132,7 +132,7 @@ def make_dataloader(
         repo_id=repo_id,
         root=dataset_path,   
         delta_timestamps=delta_timestamps,
-        episodes=[0] # val_episodes
+        episodes=[0] # val_episodes       ##### --> TEMP KINEMATICS ONLY TEST
     )
 
     # print stats

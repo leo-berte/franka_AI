@@ -1,7 +1,5 @@
 import argparse
 import torch
-import time
-import os
 
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.load_dataset import make_dataloader
@@ -11,8 +9,8 @@ from franka_ai.models.utils import get_configs_models
 """
 Run the code: 
 
-python src/franka_ai/tests/test_dataloader.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single_outliers --policy diffusion --config config1
-python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/single_outliers --policy diffusion --config config1
+python src/franka_ai/tests/test_dataloader.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers --policy diffusion --config config1
+python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/single/single_outliers --policy diffusion --config config1
 
 Visualize lerobot dataset uploaded in HF:
 
