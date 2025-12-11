@@ -57,6 +57,9 @@ def main():
     # Get configs
     dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(f"configs/{config_folder}/dataset.yaml")
     models_cfg = get_configs_models(f"configs/{config_folder}/models.yaml")
+    
+    # Get params
+    device = torch.device(dataloader_cfg["device"])
 
     # Prepare transforms for training
     transforms_train = CustomTransforms(
@@ -66,26 +69,22 @@ def main():
         train=True
     )
 
-    # Prepare transforms for inference
-    transforms_val = CustomTransforms(
-        dataset_cfg=dataset_cfg,
-        transforms_cfg=transforms_cfg,
-        model_cfg=models_cfg[policy_name],
-        train=False
-    )
-
     # Create loaders
     train_loader, _, val_loader, _ = make_dataloader(
         dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
-        model_cfg=models_cfg[policy_name],
-        transforms_train=transforms_train,
-        transforms_val=transforms_val
+        model_cfg=models_cfg[policy_name]
     )
 
     # iterate over dataloader
     for batch in train_loader:
+        
+        # Move data to device
+        batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}      
+
+        # Apply custom transforms
+        batch = transforms_train.transform(batch) 
 
         # print all keys in dataset
         for k, v in batch.items():
@@ -101,7 +100,7 @@ def main():
         print(f"{batch['action'].shape=}")  # (B, N_c, n_actions)
         print(f"{batch['action'][0,0,:]}")  # (_, _, n_actions)
         break
-
+        
     # benchmark dataloader
     benchmark_loader(train_loader)
     benchmark_loader2(train_loader)

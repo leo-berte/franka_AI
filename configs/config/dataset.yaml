@@ -21,6 +21,7 @@ dataloader:
 
 dataset:
 
+  # select here the features to use during training
   features:
     VISUAL:
       - observation.images.front_cam1
@@ -40,6 +41,7 @@ dataset:
       - task_index
       - index
 
+  # the state in the dataset is assumed to be composed in the following way
   state_slices:
     q: [0, 7]
     qdot: [7, 14]
@@ -49,6 +51,7 @@ dataset:
     gripper: [28, 29]
     fext: [29,35]
 
+  # the actions in the dataset is assumed to be composed in the following way
   action_slices:
     ee_pos: [0, 3]
     ee_quaternion: [3, 7]
@@ -62,7 +65,7 @@ dataset:
 transforms:
 
   visual:
-    img_resize: [800, 600]  # [150, 150]
+    img_resize: [120, 160]  
     normalize: false
     augmentations:
       color_jitter:
@@ -70,15 +73,15 @@ transforms:
         contrast: 0.1
         saturation: 0.1
         hue: 0.1
-        p: 1.0 # 0.8
+        p: 0.8
       gaussian_blur:
         kernel_size: [3, 3]
         sigma: [0.1, 1.0]
-        p: 1.0 # 0.3
+        p: 0.3
       random_affine:
         degrees: 5
         translate: [0.05, 0.05]
-        p: 1.0 # 0.5
+        p: 0.5
 
   state:
     augmentations:
@@ -87,7 +90,7 @@ transforms:
         joint_torque: 0.2     # σ ≈ Nm
     use_axis_angle: True
     use_past_actions: True
-    include: # define observation state components
+    include: # define how to compose post-transform observation tensor
     - q
     - qdot
     - tau
@@ -97,7 +100,7 @@ transforms:
     - gripper
 
   action:
-    include: # define action components
+    include: # define how to compose post-transform action tensor
     - ee_pos 
     - ee_ori
     - gripper

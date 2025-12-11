@@ -335,10 +335,11 @@ class FrankaInference(Node):
             "observation.images.front_cam2": data_tensors["webcam2"],
             "observation.images.front_cam3": data_tensors["webcam3"],
             "observation.images.gripper_camera": data_tensors["realsense_rgb"],
+            "action": data_tensors["action"] # transforms need to include past actions in the state
         }
 
-        # Transforms need to include past actions in the state
-        observation["action"] = data_tensors["action"]
+        # Move data to device
+        observation = {k: v.to(self.device, non_blocking=True) for k, v in observation.items()}
 
         # Apply custom transforms
         observation = self.tf_inference.transform(observation) 
@@ -351,9 +352,6 @@ class FrankaInference(Node):
             if v.dim() >= 2:
                 v = v[-1, ...].contiguous()
                 observation[k] = v.unsqueeze(0)
-
-        # Move data to device
-        observation = {k: v.to(self.device, non_blocking=True) for k, v in observation.items()}
 
         return observation
     
@@ -422,3 +420,57 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
+
+
+
+    # def build_obs(self):
+        
+    #     # Make a snapshot copy inside lock
+    #     with self.buffer_lock:
+    #         buffer_copies = {k: list(v) for k, v in self.buffers.items()}
+
+    #     # Convert data to tensors and create history
+    #     data_tensors = {} # (N_history, ...)
+    #     for k, buf in buffer_copies.items():
+    #         is_image = "webcam" in k or "rgb" in k
+    #         data_tensors[k] = self.stack_data(buf, is_image=is_image)
+
+    #     # Rebuild state vector (N_hist, D) as in original dataset
+    #     state = torch.cat([
+    #         data_tensors["q"],
+    #         data_tensors["qdot"],
+    #         data_tensors["tau"],
+    #         data_tensors["cart_pos_curr"],
+    #         data_tensors["cart_quat_curr"],
+    #         data_tensors["gripper_state"],
+    #         data_tensors["fext"],                 
+    #     ], dim=-1)
+
+    #     # Create the policy input dictionary as in original dataset
+    #     observation = {
+    #         "observation.state": state,
+    #         "observation.images.front_cam1": data_tensors["webcam1"],
+    #         "observation.images.front_cam2": data_tensors["webcam2"],
+    #         "observation.images.front_cam3": data_tensors["webcam3"],
+    #         "observation.images.gripper_camera": data_tensors["realsense_rgb"],
+    #     }
+
+    #     # Transforms need to include past actions in the state
+    #     observation["action"] = data_tensors["action"]
+
+    #     # Apply custom transforms
+    #     observation = self.tf_inference.transform(observation) 
+
+    #     # Remove key "action"
+    #     observation.pop("action", None)
+
+    #     # PATCH to convert (N_hist, ...) in (1, ...) by taking last timestep
+    #     for k, v in observation.items():
+    #         if v.dim() >= 2:
+    #             v = v[-1, ...].contiguous()
+    #             observation[k] = v.unsqueeze(0)
+
+    #     # Move data to device
+    #     observation = {k: v.to(self.device, non_blocking=True) for k, v in observation.items()}
+
+    #     return observation

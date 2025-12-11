@@ -181,7 +181,6 @@ def load_episodes_stats_patch(episode_stats_path):
 
 def print_dataset_info(ds, ds_type):
     
-    print("\n")
     print(f"Info about {ds_type}:")
     print(f"Number of total frames: {ds.meta.total_frames}")
     print(f"Number of selected frames: {ds.num_frames}")
@@ -193,8 +192,7 @@ def print_dataset_info(ds, ds_type):
     input_features = {key: ft for key, ft in features.items() if key not in output_features}
     print("Output features: \n", output_features)
     print("Input features: \n", input_features)
-    # print("Full features:")
-    # print(ds.features)
+    print("\n")
 
 def benchmark_loader(loader, num_batches=100):
 

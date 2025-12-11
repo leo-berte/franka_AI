@@ -9,44 +9,12 @@ from franka_ai.dataset.utils import build_delta_timestamps, print_dataset_info, 
 from franka_ai.utils.seed_everything import make_worker_init_fn
 
 
-class TransformedDataset(Dataset):
-    
-    """
-    Wrap a base dataset and apply custom transformations to each sample.
-
-    Args:
-        base_dataset: original dataset
-        custom_transforms: transformation pipeline applied to each sample
-    """
-
-    def __init__(self, base_dataset, custom_transforms):
-        
-        # init
-        self.base = base_dataset
-        self.custom_transforms = custom_transforms
-
-    def __len__(self):
-        return len(self.base)
-
-    def __getitem__(self, idx):
-
-        # get sample
-        sample = self.base[idx]
-
-        # apply transforms
-        sample = self.custom_transforms.transform(sample) 
-
-        return sample
-
-
 def make_dataloader(
     repo_id=None, 
     dataset_path=None, 
     dataloader_cfg=None,
     dataset_cfg=None,
-    model_cfg=None,
-    transforms_train=None,
-    transforms_val=None
+    model_cfg=None
 ):
     
     """
@@ -116,15 +84,15 @@ def make_dataloader(
     # Split indeces for training and validation
     num_train_episodes = int(num_episodes * train_split_ratio)
     num_val_episodes = int(num_episodes * val_split_ratio)
-    train_episodes = episode_ids[:num_train_episodes]
-    val_episodes = episode_ids[num_train_episodes:num_train_episodes + num_val_episodes]
+    train_episodes = [0] # episode_ids[:num_train_episodes] ##### --> TEMP KINEMATICS ONLY TEST
+    val_episodes = [0] # episode_ids[num_train_episodes:num_train_episodes + num_val_episodes] ##### --> TEMP KINEMATICS ONLY TEST
 
     # Load the raw dataset (hub or local)
     train_ds = LeRobotDatasetPatch(
         repo_id=repo_id,
         root=dataset_path,   
         delta_timestamps=delta_timestamps,
-        episodes=[0] # train_episodes       ##### --> TEMP KINEMATICS ONLY TEST
+        episodes=train_episodes       
     )
 
     # Load the raw dataset (hub or local)
@@ -132,7 +100,7 @@ def make_dataloader(
         repo_id=repo_id,
         root=dataset_path,   
         delta_timestamps=delta_timestamps,
-        episodes=[0] # val_episodes       ##### --> TEMP KINEMATICS ONLY TEST
+        episodes=val_episodes
     )
 
     # print stats
@@ -146,14 +114,10 @@ def make_dataloader(
     else:
         worker_fn = None   
 
-    # Apply transforms
-    transformed_train_ds = TransformedDataset(train_ds, transforms_train)
-    transformed_val_ds = TransformedDataset(val_ds, transforms_val)
-
     # Wrap in DataLoaders
 
     train_loader = DataLoader(
-        transformed_train_ds,
+        train_ds,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers, # number of CPU processes that load data in parallel
@@ -165,7 +129,7 @@ def make_dataloader(
     )
 
     val_loader = DataLoader(
-        transformed_val_ds,
+        val_ds,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,

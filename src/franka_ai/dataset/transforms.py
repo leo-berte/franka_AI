@@ -5,11 +5,11 @@ import torch
 
 # TODO: 
 
-# Bring kornia on GPU? capire architettura se fattibile
 
 # 0) check gripper 0-1 chiuso - aperto
 
 # 1) add relative vs absolute cart pose as actions/state
+
 
 
 class CustomTransforms():
@@ -105,11 +105,11 @@ class CustomTransforms():
             self.skip_features.append(v)
 
     def joint_vel_transforms(self, v):
-        noise = torch.randn_like(v[:1,:]) * self.joint_vel_std_dev # v: (N_h, D) (history) → noise: (1, D)
+        noise = torch.randn_like(v[:, :1, :]) * self.joint_vel_std_dev   # v: (B, N_h, D) → noise: (B, 1, D) 
         return v + noise
     
     def joint_torque_transforms(self, v):
-        noise = torch.randn_like(v[:1,:]) * self.joint_torque_std_dev
+        noise = torch.randn_like(v[:, :1, :]) * self.joint_torque_std_dev   
         return v + noise
 
     @staticmethod
@@ -120,7 +120,6 @@ class CustomTransforms():
             return (value > gripper_half_width).float() # returns 0 (closed) or 1 (open)
         else:
             return float(value > gripper_half_width)    # returns 0 (closed) or 1 (open)
-
 
     @staticmethod
     def quaternion2axis_angle(q):
@@ -172,8 +171,24 @@ class CustomTransforms():
             if k in self.feature_groups["VISUAL"]:
                 
                 v = v.to(torch.float32) # convert data to tensor float32
-                sample[k] = self.img_tf_train(v) if self.train else self.img_tf_inference(v)
-                sample[k] = torch.zeros_like(sample[k]) # TEMP FOR KINEMATICS ONLY TEST
+
+                pre_shape = v.shape[:-3]  # it could be (B, N_h) or (B,)
+
+                # flatten temporal dimension
+                v_flat = v.reshape(-1, *v.shape[-3:])  # (*, C, H, W)
+
+                # apply augmentations
+                v_aug = self.img_tf_train(v_flat) if self.train else self.img_tf_inference(v_flat)
+                v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST
+                
+                # reshape back
+                v_aug = v_aug.reshape(*pre_shape, *v_aug.shape[-3:])
+
+                # ensure images always have time dimension
+                if v_aug.dim() == 4:  # (B, C, H, W)
+                    v_aug = v_aug.unsqueeze(1)  # (B, 1, C, H, W)
+
+                sample[k] = v_aug
 
             if k in self.feature_groups["STATE"]:
 
@@ -203,7 +218,7 @@ class CustomTransforms():
                     # add part to state vector
                     state_parts.append(part)
 
-                v_new = torch.cat(state_parts, dim=-1)
+                v_new = torch.cat(state_parts, dim=-1) # (B, N_h, D)
                 sample[k] = v_new
 
             if k in self.feature_groups["ACTION"]:
@@ -224,12 +239,12 @@ class CustomTransforms():
                     # add part to state vector
                     action_parts.append(part)
 
-                v_new = torch.cat(action_parts, dim=-1)
+                v_new = torch.cat(action_parts, dim=-1) # (B, N_h+N_c, D)
 
                 if self.use_past_actions:
-                    past_actions = v_new[:self.N_history, :]
+                    past_actions = v_new[:, :self.N_history, :]  # (B, N_h, D)
 
-                future_actions = v_new[self.N_history:, :]
+                future_actions = v_new[:, self.N_history:, :] # (B, N_c, D)
                 sample[k] = future_actions
 
         # append past actions to state if requested

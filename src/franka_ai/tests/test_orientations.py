@@ -5,7 +5,7 @@ from franka_ai.dataset.transforms import CustomTransforms
 
 
 """
-Run the code: python src/franka_ai/tests/test_transforms.py
+Run the code: python src/franka_ai/tests/test_orientations.py
 """
 
 

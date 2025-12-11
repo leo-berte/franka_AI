@@ -8,16 +8,14 @@ import time
 from lerobot.common.datasets.lerobot_dataset import LeRobotDatasetMetadata
 from lerobot.common.datasets.utils import append_jsonlines, serialize_dict
 
-from franka_ai.dataset.load_dataset import TransformedDataset
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.utils import get_configs_dataset, build_delta_timestamps, LeRobotDatasetPatch
-from franka_ai.models.utils import get_configs_models
 
 
 """
 Run the code: 
 
-python src/franka_ai/dataset/generate_updated_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers --config config1
+python src/franka_ai/dataset/generate_updated_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers --config config1
 python src/franka_ai/dataset/generate_updated_stats.py --dataset /workspace/data/today_data/today_outliers --config config1
 """
 
@@ -43,7 +41,7 @@ def parse_args():
     # return absolute path to the dataset and config folder name
     return args.dataset, args.config
 
-def compute_episode_stats_streaming(dataloader, keep_keys, feature_groups, batch_size, N_history):
+def compute_episode_stats_streaming(dataloader, transforms, keep_keys, feature_groups, batch_size, N_history):
 
     mins = {}
     maxs = {}
@@ -55,6 +53,9 @@ def compute_episode_stats_streaming(dataloader, keep_keys, feature_groups, batch
 
     # extract first batch to infer feature shapes
     first_batch = next(iter(dataloader))
+
+    # Apply custom transforms
+    first_batch = transforms.transform(first_batch) 
 
     # initialize accumulators
     for k in keep_keys:
@@ -82,6 +83,9 @@ def compute_episode_stats_streaming(dataloader, keep_keys, feature_groups, batch
 
     # Scan entire dataset
     for batch in dataloader:
+
+        # Apply custom transforms
+        batch = transforms.transform(batch) 
 
         for k in keep_keys:
 
@@ -160,6 +164,13 @@ def main():
     # Set output folder to save new stats
     output_path = Path(f"configs/{config_folder}") / "episodes_stats_transformed.jsonl"
 
+    # Safety check: avoid silently appending to an existing file
+    if output_path.exists():
+        raise RuntimeError(
+            f"ERROR: {output_path} already exists.\n"
+            "Delete it before running stats generation to avoid corrupting the file."
+        )
+
     # Get configs
     dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(f"configs/{config_folder}/dataset.yaml")
     
@@ -215,13 +226,9 @@ def main():
                                       delta_timestamps=delta_timestamps, 
                                       episodes=[ep])
 
-        # Create transforms
-        ep_data_transformed = TransformedDataset(ep_data, 
-                                                 transforms_stats)
-
         # Create dataloader
         ep_loader = DataLoader(
-            ep_data_transformed,
+            ep_data,
             batch_size=dataloader_cfg["batch_size"],
             shuffle=False,
             num_workers=dataloader_cfg["num_workers"],
@@ -231,6 +238,7 @@ def main():
 
         # Compute stats per each transformed episode
         ep_stats = compute_episode_stats_streaming(ep_loader,
+                                                   transforms_stats,
                                                    keep_keys,
                                                    dataset_cfg["features"],
                                                    dataloader_cfg["batch_size"],

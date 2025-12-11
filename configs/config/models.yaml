@@ -5,7 +5,7 @@
 diffusion: 
 
   params:
-    n_obs_steps: 3 
+    n_obs_steps: 3
     horizon: 16    
     n_action_steps: 8
 

@@ -41,9 +41,9 @@ http://localhost:6006/#timeseries
 
 # train on SINGLE dataset --> STATE only --> 1 episode reply
 # train on SINGLE dataset --> full dataset for single bag pick & place
-
-
 # try ACT
+
+
 
 # 1) Handle correctly pre-training (i.e. I add Fext in input features for example)
 # 2) Optimize training (see notes
@@ -138,9 +138,7 @@ def train():
         dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
-        model_cfg=models_cfg[policy_name],
-        transforms_train=transforms_train,
-        transforms_val=transforms_val
+        model_cfg=models_cfg[policy_name]
     )
 
     # ---------------------
@@ -157,7 +155,7 @@ def train():
     else:
 
         # Get dataset input/output stats
-        features = dataset_to_policy_features_patch(train_loader, dataset_cfg["features"])
+        features = dataset_to_policy_features_patch(train_loader, dataset_cfg["features"], transforms_train)
         output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
         input_features = {key: ft for key, ft in features.items() if ft.type is not FeatureType.ACTION}
         print("New output_features: ", output_features)
@@ -229,6 +227,9 @@ def train():
 
             # Move data to device
             batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}      
+            
+            # Apply custom transforms
+            batch = transforms_train.transform(batch) 
 
             # Computes the loss (and optionally predictions)
             loss, _ = policy.forward(batch)
@@ -276,6 +277,7 @@ def train():
                 with torch.no_grad():
                     for val_batch in val_loader:
                         val_batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in val_batch.items()}
+                        val_batch = transforms_val.transform(val_batch) 
                         val_loss, _ = policy.forward(val_batch)
                         val_loss_total += val_loss.item()
                 avg_val_loss = val_loss_total / len(val_loader)

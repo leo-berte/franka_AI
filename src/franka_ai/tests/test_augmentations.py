@@ -11,12 +11,6 @@ from franka_ai.dataset.utils import get_configs_dataset
 from franka_ai.models.utils import get_configs_models
 
 
-# TODO
-
-# Bring kornia on GPU? capire architettura se fattibile
-# ripulisci img_resize e probabilities nel dataset.yaml
-
-
 """
 Run the code: 
 
@@ -32,7 +26,7 @@ def parse_args():
         "--image",
         type=str,
         required=True,
-        help="Path to input RGB image"
+        help="RGB image name"
     )
 
     parser.add_argument(
@@ -142,7 +136,7 @@ def main():
     N_history = tf.N_history
     D_vel = 7
 
-    joint_vel = torch.zeros(N_history, D_vel)
+    joint_vel = torch.zeros(1, N_history, D_vel)
 
     print("\nJoint velocity BEFORE:")
     print(joint_vel)
@@ -162,7 +156,7 @@ def main():
 
     D_tau = 7
 
-    joint_tau = torch.zeros(N_history, D_tau)
+    joint_tau = torch.zeros(1, N_history, D_tau)
 
     print("\nJoint torque BEFORE:")
     print(joint_tau)
@@ -178,6 +172,8 @@ def main():
     # ---------------------------
     # BENCHMARK CPU Vs CPU TIMING
     # ---------------------------
+
+    print(f"\nStarting Benchmark analysis...")
 
     benchmark_image_augmentations(
         tf=tf,

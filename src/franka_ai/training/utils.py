@@ -84,9 +84,12 @@ def parse_normalization_mapping(normalization_cfg):
 
     return {k: str_to_enum[v] for k, v in normalization_cfg.items()}
 
-def dataset_to_policy_features_patch(dataloader, features):
+def dataset_to_policy_features_patch(dataloader, features, transforms):
 
     batch = next(iter(dataloader))
+
+    # apply custom transforms to have the batch in the final shape
+    batch = transforms.transform(batch) 
 
     policy_features = {}
 

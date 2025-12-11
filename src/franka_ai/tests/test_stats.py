@@ -11,33 +11,28 @@ from franka_ai.dataset.utils import load_episodes_stats_patch, LeRobotDatasetPat
 """
 Run the code: 
 
-python src/franka_ai/tests/test_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/today_data/today_outliers
-python src/franka_ai/tests/test_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers
+python src/franka_ai/tests/test_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers --config config1
 
-python src/franka_ai/tests/test_stats.py --dataset /workspace/data/today_data/today_outliers
 """
 
 
-# TODO:
-
-# 1) They don't match if I use: episodes_idx = [0,1]
-
-
-
-def get_dataset_path():
+def parse_args():
 
     # set parser
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--dataset",
+
+    parser.add_argument("--dataset",
         type=str,
         required=True,
-        help="Absolute path to the dataset folder"
-    )
+        help="Absolute path to the dataset folder")
+        
+    parser.add_argument("--config", type=str, default="config",
+                help="Config folder name")
+    
     args = parser.parse_args()
 
-    # return absolute path to the dataset
-    return args.dataset
+    # return absolute path to the dataset and config folder name
+    return args.dataset, args.config
 
 def check_stats(old_stats, new_stats):
 
@@ -63,7 +58,7 @@ def check_stats(old_stats, new_stats):
 def main():
 
     # Get path to dataset (via argparser)
-    dataset_path = get_dataset_path()
+    dataset_path, config_folder = parse_args()
 
     # Get dataset metadata
     dataset_meta = LeRobotDatasetMetadata(repo_id=None, root=dataset_path)
@@ -76,7 +71,7 @@ def main():
     ## 1) Transformed stats
 
     # Get episodes stats
-    episode_stats_path = Path(dataset_path) / "meta" / "episodes_stats_transformed.jsonl"
+    episode_stats_path = Path(f"configs/{config_folder}") / "episodes_stats_transformed.jsonl"
     episodes_stats = load_episodes_stats_patch(episode_stats_path)
 
     # Aggregate episodes stats in a unique global stats
