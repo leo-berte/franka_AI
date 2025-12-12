@@ -100,6 +100,9 @@ class FrankaInference(Node):
             # "gripper_command": deque(maxlen=self.N_history),
         }
 
+        # Params
+        self.alpha = 0.05 # filter actions
+
         # Subscribers
         self.webcam1_sub = self.create_subscription(CompressedImage, '/webcam1/image_raw/compressed', self.webcam1_callback, 10)
         self.webcam2_sub = self.create_subscription(CompressedImage, '/webcam2/image_raw/compressed', self.webcam2_callback, 10)
@@ -138,6 +141,9 @@ class FrankaInference(Node):
                                                        self.fps_sampling_chunk)
 
         self.get_logger().info("FrankaInference node initialized successfully")
+
+        ## TEMP ##
+        self.step=1
 
     def webcam1_callback(self, msg):
 
@@ -273,8 +279,8 @@ class FrankaInference(Node):
                     t = t.unsqueeze(0)  # make scalar into 1D tensor
                 tensor_values.append(t)
 
-        # Stack to (N_history, ... )
-        stacked_values = torch.stack(tensor_values, dim=0)
+        # Stack to (N_history, ... ) + add B dimension
+        stacked_values = torch.stack(tensor_values, dim=0).unsqueeze(0)
 
         return stacked_values
 
@@ -342,19 +348,44 @@ class FrankaInference(Node):
         observation = {k: v.to(self.device, non_blocking=True) for k, v in observation.items()}
 
         # Apply custom transforms
-        observation = self.tf_inference.transform(observation) 
+        observation = self.tf_inference.transform(observation) # in/out: (B, N_h, ...)
 
         # Remove key "action"
         observation.pop("action", None)
 
-        # PATCH to convert (N_hist, ...) in (1, ...) by taking last timestep
+        # PATCH to convert (B,N_hist, ...) in (B, ...) by taking last timestep
         for k, v in observation.items():
             if v.dim() >= 2:
-                v = v[-1, ...].contiguous()
-                observation[k] = v.unsqueeze(0)
+                v = v[:, -1, ...].contiguous()
+                observation[k] = v
 
         return observation
-    
+
+    def smooth_action(self, new_action, prev_action):
+        
+        # Split components
+
+        pos_new  = new_action[:3]
+        quat_new = new_action[3:7]
+        grip_new = new_action[7]  # unchanged
+
+        pos_prev  = prev_action[:3]
+        quat_prev = prev_action[3:7]
+        grip_prev = prev_action[7]
+
+        # Filter position
+        pos_f = self.alpha * pos_new + (1 - self.alpha) * pos_prev
+
+        # Filter quaternion
+        quat_f = self.alpha * quat_new + (1 - self.alpha) * quat_prev
+        quat_f = quat_f / np.linalg.norm(quat_f)   # renormalize
+
+        # Gripper unchanged
+        grip_f = grip_new
+
+        # Reassemble
+        return np.concatenate([pos_f, quat_f, [grip_f]])
+
     def inference_timer(self):
 
         # Wait at least 1 data for each buffer
@@ -366,9 +397,11 @@ class FrankaInference(Node):
 
         # Inference
         with torch.inference_mode():
-            action = self.policy.select_action(obs) # (B, D) --> (D, )
+            action = self.policy.select_action(obs) # (B, D) --> (B, D)
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
-            print("policy action: ", action)
+            print("step: ", self.step)
+            # print("policy action: ", action)
+            self.step+=1
 
         # Move to CPU and convert to numpy
         action = action.squeeze(0).to("cpu")
@@ -380,6 +413,15 @@ class FrankaInference(Node):
         # Get action 
         action_np = action.numpy()
         action_pre_tf = np.concatenate([action_np[:3], quat_np, [action_np[-1]]])
+        print("action policy", action_pre_tf)
+        
+        # # Get previous action from buffer (take only the action values)
+        # prev_action = np.array(self.buffers["action"][-1][1], dtype=np.float32)
+        # print("prev_action", prev_action)
+
+        # # Filter action
+        # action_pre_tf = self.smooth_action(action_pre_tf, prev_action)
+        # print("action policy filtered and applied", action_pre_tf)
 
         # Save action in buffer safely
         with self.buffer_lock:
@@ -388,13 +430,13 @@ class FrankaInference(Node):
         # Set cart pose action
         cart_msg = PoseStamped()
         cart_msg.header.stamp = self.get_clock().now().to_msg()
-        cart_msg.pose.position.x = float(action_np[0])
-        cart_msg.pose.position.y = float(action_np[1])
-        cart_msg.pose.position.z = float(action_np[2])
-        cart_msg.pose.orientation.x = float(quat_np[0])
-        cart_msg.pose.orientation.y = float(quat_np[1])
-        cart_msg.pose.orientation.z = float(quat_np[2])
-        cart_msg.pose.orientation.w = float(quat_np[3])
+        cart_msg.pose.position.x = float(action_pre_tf[0])
+        cart_msg.pose.position.y = float(action_pre_tf[1])
+        cart_msg.pose.position.z = float(action_pre_tf[2])
+        cart_msg.pose.orientation.x = float(action_pre_tf[3])
+        cart_msg.pose.orientation.y = float(action_pre_tf[4])
+        cart_msg.pose.orientation.z = float(action_pre_tf[5])
+        cart_msg.pose.orientation.w = float(action_pre_tf[6])
 
         # Publish
         self.cart_pose_action_pub.publish(cart_msg)
@@ -402,7 +444,7 @@ class FrankaInference(Node):
         # Set gripper action
         gripper_msg = GripperWidth()
         gripper_msg.header.stamp = self.get_clock().now().to_msg()
-        gripper_msg.width = float(action_np[-1])
+        gripper_msg.width = float(action_pre_tf[-1])
 
         # Publish
         self.gripper_action_pub.publish(gripper_msg)
@@ -420,6 +462,7 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
+
 
 
 

@@ -38,6 +38,8 @@ http://localhost:6006/#timeseries
 
 # TODO:
 
+# train con frequenza piu bassa, togli stati inutili, plotta stati epr vedere quanto rumorosi, attento alle normalization per dataset piccoli
+# reply actions con dataloader, poi muovi robot con dataloader come input, use ACT, 
 
 # train on SINGLE dataset --> STATE only --> 1 episode reply
 # train on SINGLE dataset --> full dataset for single bag pick & place
@@ -229,7 +231,7 @@ def train():
             batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}      
             
             # Apply custom transforms
-            batch = transforms_train.transform(batch) 
+            batch = transforms_train.transform(batch) # in/out: (B, N_h, ...)
 
             # Computes the loss (and optionally predictions)
             loss, _ = policy.forward(batch)

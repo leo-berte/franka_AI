@@ -6,7 +6,7 @@ import torch
 # TODO: 
 
 
-# 0) check gripper 0-1 chiuso - aperto
+# 0) check gripper 0-1 chiuso - aperto -- policy deve produrre valori continui come azione o discreti? devo discretizzare anche in uscita a policy in inference?
 
 # 1) add relative vs absolute cart pose as actions/state
 
