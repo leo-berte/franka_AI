@@ -8,6 +8,6 @@ inference:
   configs_dataset_rel_path: "../workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-08_15-14-40/dataset.yaml"  # saved with model weights
   configs_models_rel_path: "../workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-08_15-14-40/models.yaml"    # saved with model weights
 
-  policy_rate: 30 # for now, it shall be the same as: fps_sampling_chunk
+  policy_rate: 10 # 30 # for now, it shall be the same as: fps_sampling_chunk
   fps_dataset: 29.995 # it shall be the fps got from the dataset (info.json) used for training
   policy_name: "diffusion" # [diffusion, act]

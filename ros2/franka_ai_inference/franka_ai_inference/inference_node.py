@@ -128,9 +128,9 @@ class FrankaInference(Node):
         self.policy = PolicyClass.from_pretrained(pretrained_policy_abs_path)
         self.policy.reset() # reset the policy to prepare for rollout
 
-        # Extract input features keys
-        self.policy_input_features_keys = self.policy.config.input_features.keys()
-        self.dataset_input_features_keys = dataset_cfg["features"]["VISUAL"] + dataset_cfg["features"]["STATE"]
+        # # Extract input features keys
+        # self.policy_input_features_keys = self.policy.config.input_features.keys()
+        # self.dataset_input_features_keys = dataset_cfg["features"]["VISUAL"] + dataset_cfg["features"]["STATE"]
 
         # Build the delta_timestamps dict for history and future        
         self.delta_timestamps = build_delta_timestamps(dataset_cfg["features"], 
@@ -408,10 +408,15 @@ class FrankaInference(Node):
 
         # Convert axis-angle to quaternion
         quat = CustomTransforms.axis_angle2quaternion(action[3:6])
-        quat_np = np.array(quat)
 
-        # Get action 
+        # Convert gripper in binary {0,1}
+        action[-1] = CustomTransforms.gripper_continuous2discrete(action[-1])
+
+        # Convert tensors to numpy
         action_np = action.numpy()
+        quat_np = quat.numpy()
+
+        # Build final action as expected by controller
         action_pre_tf = np.concatenate([action_np[:3], quat_np, [action_np[-1]]])
         print("action policy", action_pre_tf)
         

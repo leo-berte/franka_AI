@@ -38,15 +38,6 @@ http://localhost:6006/#timeseries
 
 # TODO:
 
-# train con frequenza piu bassa, togli stati inutili, plotta stati epr vedere quanto rumorosi, attento alle normalization per dataset piccoli
-# reply actions con dataloader, poi muovi robot con dataloader come input, use ACT, 
-
-# train on SINGLE dataset --> STATE only --> 1 episode reply
-# train on SINGLE dataset --> full dataset for single bag pick & place
-# try ACT
-
-
-
 # 1) Handle correctly pre-training (i.e. I add Fext in input features for example)
 # 2) Optimize training (see notes
 

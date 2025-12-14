@@ -1,146 +1,149 @@
-from pathlib import Path
-import gymnasium as gym
-import gym_pusht
-import imageio
-import numpy
+import argparse
 import torch
-import os
+import numpy as np
 
-from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
 
-from franka_ai.inference.utils import setup_eval_folder
+from franka_ai.dataset.transforms import CustomTransforms
+from franka_ai.dataset.load_dataset import make_dataloader
+from franka_ai.dataset.utils import get_configs_dataset
+from franka_ai.models.utils import get_configs_models
+from franka_ai.models.factory import get_policy_class
 
-# Reproducibility
-SEED=42
 
 """
-Run the code: python src/franka_ai/inference/evaluate.py
+Run the code: 
+
+python src/franka_ai/inference/evaluate.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers \
+                                           --checkpoint /outputs/checkpoints/single_outliers_diffusion_2025-12-08_15-14-40 \
+                                           --policy diffusion 
 """
 
 
-def evaluate():
+# TODO:
 
-    """
-
-    INSERT CLEAN DESCRIPTION
-
-    """
-
-    # Get folder to save eval video
-    eval_dir = setup_eval_folder()
-
-    # Parameters
-    device = "cuda"  
-
-    # Base folder for all experiments
-    base_output_dir = os.path.join(os.getcwd())
-    pretrained_policy_path = os.path.join(base_output_dir, "outputs", "checkpoints", "today_outliers_DP_2025-12-02_16-40-09", "best_model.pt") # SI, allenato da conda
-    # pretrained_policy_path = os.path.join(base_output_dir, "outputs", "checkpoints", "today_outliers_DP_2025-12-02_17-10-22", "best_model.pt") # NO, allenato da docker
-    print(pretrained_policy_path)
-
-    # --> not working even with: leonardo@leonardo-Precision-5490:~/Documents/Coding/franka_AI/outputs$ sudo chown -R $USER:$USER checkpoints/
+# Add plotting of errors
 
 
-    # Load policy
-    policy = DiffusionPolicy.from_pretrained(pretrained_policy_path)
+def parse_args():
 
-    # Initialize evaluation environment to render two observation types:
-    # an image of the scene and state/position of the agent. The environment
-    # also automatically stops running after 300 interactions/steps.
-    env = gym.make(
-        "gym_pusht/PushT-v0",
-        obs_type="pixels_agent_pos",
-        max_episode_steps=10, # 300
+    # set parser
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--dataset",
+        type=str,
+        required=True,
+        help="Absolute path to the dataset folder")
+    
+    parser.add_argument("--checkpoint",
+        type=str,
+        required=True,
+        help="Absolute path to the checkpoint folder")
+    
+    parser.add_argument("--policy", type=str, default="diffusion",
+                    choices=["diffusion", "act"],
+                    help="Policy name")
+    
+    args = parser.parse_args()
+
+    # return args
+    return args.dataset, args.checkpoint, args.policy
+
+
+def main():
+
+    # Get paths
+    dataset_path, checkpoint_path, policy_name= parse_args()
+
+    # Get configs
+    dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(f"{checkpoint_path}/dataset.yaml")
+    models_cfg = get_configs_models(f"{checkpoint_path}/models.yaml")
+    model_cfg = models_cfg[policy_name]
+    
+    # Get params
+    device = torch.device(dataloader_cfg["device"])
+    # N_history = model_cfg["params"].get("n_obs_steps") or model_cfg["params"].get("N_history")
+    # N_chunk = model_cfg["params"].get("horizon") or model_cfg["params"].get("chunk_size") or model_cfg["params"].get("N_chunk")
+    # fps_sampling_hist = model_cfg["sampling"]["fps_sampling_hist"]
+    # fps_sampling_chunk = model_cfg["sampling"]["fps_sampling_chunk"]
+
+    # Prepare transforms for inference
+    tf_inference = CustomTransforms(
+        dataset_cfg=dataset_cfg,
+        transforms_cfg=transforms_cfg,
+        model_cfg=model_cfg,
+        train=False
     )
 
-    # We can verify that the shapes of the features expected by the policy match the ones from the observations
-    # produced by the environment
-    print("Check input shapes")
-    print(policy.config.input_features)
-    print(env.observation_space)
+    # Load policy
+    PolicyClass = get_policy_class(policy_name)
+    policy = PolicyClass.from_pretrained(f"{checkpoint_path}/best_model.pt")
+    policy.reset() # reset the policy to prepare for rollout
 
-    # Same check on actions
-    print("Check action shapes")
-    print(policy.config.output_features)
-    print(env.action_space)
+    # Create loaders
+    train_loader, _, val_loader, _ = make_dataloader(
+        dataset_path=dataset_path,
+        dataloader_cfg=dataloader_cfg,
+        dataset_cfg=dataset_cfg,
+        model_cfg=model_cfg
+    )
 
-    # Reset the policy and environments to prepare for rollout
-    policy.reset()
-    numpy_observation, info = env.reset(seed=SEED)
+    # Counter
+    step = 1
 
-    # Prepare to collect every rewards and all the frames of the episode
-    rewards = []
-    frames = []
+    # iterate over dataloader
+    for batch in train_loader:
+        
+        # Move data to device
+        batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}      
 
-    # Render frame of the initial state
-    frames.append(env.render())
+        # Apply custom transforms
+        batch = tf_inference.transform(batch) ## devo rimuovere "action" ????
 
-    step = 0
-    done = False
-
-    while not done:
-
-        # Prepare observation for the policy running in Pytorch
-        state = torch.from_numpy(numpy_observation["agent_pos"])
-        image = torch.from_numpy(numpy_observation["pixels"])
-
-        # Convert to float32 with image from channel first in [0,255]
-        # to channel last in [0,1]
-        state = state.to(torch.float32)
-        image = image.to(torch.float32) / 255
-        image = image.permute(2, 0, 1)
-
-        # Send data tensors from CPU to GPU
-        state = state.to(device, non_blocking=True)
-        image = image.to(device, non_blocking=True)
-
-        # Add extra (empty) batch dimension, required to forward the policy
-        state = state.unsqueeze(0)
-        image = image.unsqueeze(0)
-
-        # Create the policy input dictionary
-        observation = {
-            "observation.state": state,
-            "observation.image": image,
-        }
-
-        # Predict the next action with respect to the current observation
+        # Inference
         with torch.inference_mode():
-            action = policy.select_action(observation)
+            action = policy.select_action(batch) # (B, D) --> (B, D)
+            # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
+            print("step: ", step)
+            # print("policy action: ", action)
+            step+=1
 
-        # Prepare the action for the environment
-        numpy_action = action.squeeze(0).to("cpu").numpy()
+        # Move to CPU and convert to numpy
+        action = action.squeeze(0).to("cpu")
 
-        # Step through the environment and receive a new observation
-        numpy_observation, reward, terminated, truncated, info = env.step(numpy_action)
-        print(f"{step=} {reward=} {terminated=}")
+        # Convert axis-angle to quaternion
+        quat = CustomTransforms.axis_angle2quaternion(action[3:6])
 
-        # Keep track of all the rewards and frames
-        rewards.append(reward)
-        frames.append(env.render())
+        # # Convert gripper in binary {0,1}
+        # action[-1] = CustomTransforms.gripper_continuous2discrete(action[-1])
 
-        # The rollout is considered done when the success state is reached (i.e. terminated is True),
-        # or the maximum number of iterations is reached (i.e. truncated is True)
-        done = terminated | truncated | done
-        step += 1
+        # Convert tensors to numpy
+        action_np = action.numpy()
+        quat_np = quat.numpy()
 
-    if terminated:
-        print("Success!")
-    else:
-        print("Failure!")
+        # Build final action as expected by controller
+        # action_pre_tf = np.concatenate([action_np[:3], quat_np, [action_np[-1]]])
+        action_pre_tf = np.concatenate([action_np[:3], quat_np])
+        print("action policy", action_pre_tf)
+        
+        # # Save action in buffer safely --> con dataloader se uso past actions = true come faccio? input policy è batch dataloader, devo mettere output policy
+        # with self.buffer_lock:
+        #     self.buffers["action"].append((self.get_clock().now().to_msg(), action_pre_tf))
 
-    # Get the speed of environment (i.e. its number of frames per second).
-    fps = env.metadata["render_fps"]
+        # # print all keys in dataset
+        # for k, v in batch.items():
+        #     if isinstance(v, torch.Tensor):
+        #         print(k, v.shape)
+        #     else:
+        #         print(k, type(v))
 
-    # Encode all frames into a mp4 video.
-    video_path = os.path.join(eval_dir, "rollout.mp4")
-    imageio.mimsave(str(video_path), numpy.stack(frames), fps=fps)
-
-    print(f"Video of the evaluation is available in '{video_path}'.")
-
-
+        # # print data
+        # print(f"{batch['observation.images.front_cam1'].shape=}")  # (B, N_h, c, h, w)
+        # print(f"{batch['observation.state'].shape=}")  # (B, N_h, n_state)
+        # print(f"{batch['observation.state'][0,0,:]}")  # (_, _, n_state)
+        # print(f"{batch['action'].shape=}")  # (B, N_c, n_actions)
+        # print(f"{batch['action'][0,0,:]}")  # (_, _, n_actions)
+        # break
 
 
 if __name__ == "__main__":
-    
-    evaluate()
+    main()
