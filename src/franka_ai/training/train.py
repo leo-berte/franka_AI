@@ -23,7 +23,7 @@ from franka_ai.models.factory import get_policy_config_class, make_policy, get_p
 """
 Run the code: 
 
-python src/franka_ai/training/train.py ---dataset /mnt/Data/datasets/lerobot/single_outliers \ 
+python src/franka_ai/training/train.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
                                        --config config1 \
                                        --policy diffusion \
                                        --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints/.....
