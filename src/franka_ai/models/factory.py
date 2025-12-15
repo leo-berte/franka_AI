@@ -7,8 +7,8 @@ def get_policy_class(policy_name):
         return DiffusionPolicy
     elif policy_name == "act":
         # from lerobot.common.policies.act.modeling_act import ACTPolicy
-        from franka_ai.models.actPatch.modeling_act import ACTPolicy
-        return ACTPolicy
+        from franka_ai.models.actPatch.modeling_actpatch import ACTPolicyPatch
+        return ACTPolicyPatch
     else:
         raise NotImplementedError(f"Policy with name {policy_name} is not implemented.")
 
@@ -19,8 +19,8 @@ def get_policy_config_class(policy_name):
         return DiffusionConfig
     elif policy_name == "act":
         # from lerobot.common.policies.act.configuration_act import ACTConfig
-        from franka_ai.models.actPatch.configuration_act import ACTConfig
-        return ACTConfig
+        from franka_ai.models.actPatch.configuration_actpatch import ACTConfigPatch
+        return ACTConfigPatch
     else:
         raise NotImplementedError(f"Policy with name {policy_name} is not implemented.")
 
