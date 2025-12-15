@@ -1,28 +1,14 @@
-#!/usr/bin/env python
+### Configurations
 
-# Copyright 2024 Tony Z. Zhao and The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 from dataclasses import dataclass, field
 
 from lerobot.common.optim.optimizers import AdamWConfig
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.configs.types import NormalizationMode
 
-
-@PreTrainedConfig.register_subclass("act")
+@PreTrainedConfig.register_subclass("act_patch")
 @dataclass
-class ACTConfig(PreTrainedConfig):
+class ACTConfigPatch(PreTrainedConfig):
     """Configuration class for the Action Chunking Transformers policy.
 
     Defaults are configured for training on bimanual Aloha tasks like "insertion" or "transfer".
@@ -89,7 +75,7 @@ class ACTConfig(PreTrainedConfig):
         kl_weight: The weight to use for the KL-divergence component of the loss if the variational objective
             is enabled. Loss is then calculated as: `reconstruction_loss + kl_weight * kld_loss`.
     """
-
+    type: str = "act_patch"
     # Input / output structure.
     n_obs_steps: int = 1
     chunk_size: int = 100

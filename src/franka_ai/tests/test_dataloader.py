@@ -9,7 +9,7 @@ from franka_ai.models.utils import get_configs_models
 """
 Run the code: 
 
-python src/franka_ai/tests/test_dataloader.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers --policy diffusion --config config1
+python src/franka_ai/tests/test_dataloader.py --dataset /mnt/Data/datasets/lerobot/single_outliers --policy diffusion --config config1
 python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/single_outliers --policy diffusion --config config1
 
 Visualize lerobot dataset uploaded in HF:
@@ -18,8 +18,7 @@ python -m lerobot.scripts.visualize_dataset --repo-id lerobot/pusht --episode-in
 
 Visualize custom dataset saved locally:
 
-python -m lerobot.scripts.visualize_dataset --repo-id single_outliers --root /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers --episode-index 0
-python -m lerobot.scripts.visualize_dataset --repo-id single_outliers --root /workspace/data/single_outliers --episode-index 0
+python -m lerobot.scripts.visualize_dataset --repo-id single_outliers --root /mnt/Data/datasets/lerobot/single_outliers --episode-index 0
 """
 
 

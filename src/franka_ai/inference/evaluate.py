@@ -14,24 +14,8 @@ from franka_ai.models.factory import get_policy_class
 """
 Run the code: 
 
-python src/franka_ai/inference/evaluate.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers \
-                                           --checkpoint outputs/checkpoints/single_outliers_diffusion_2025-12-14_10-38-20 \
-                                           --policy diffusion 
-
-python src/franka_ai/inference/evaluate.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers \
-                                           --checkpoint outputs/checkpoints/single_outliers_diffusion_2025-12-14_12-14-34 \
-                                           --policy diffusion 
-
-python src/franka_ai/inference/evaluate.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers \
-                                           --checkpoint outputs/checkpoints/single_outliers_diffusion_2025-12-14_18-43-48 \
-                                           --policy diffusion
-
-python src/franka_ai/inference/evaluate.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers \
+python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
                                            --checkpoint outputs/checkpoints/single_outliers_diffusion_2025-12-14_20-04-38 \
-                                           --policy diffusion
-                                
-python src/franka_ai/inference/evaluate.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers \
-                                           --checkpoint outputs/checkpoints/single_outliers_diffusion_2025-12-14_21-21-50 \
                                            --policy diffusion
 """
 
@@ -132,8 +116,6 @@ def main():
     # iterate over dataloader
     for step, batch in enumerate(train_loader):
         
-        print("step: ", step)
-
         # Move data to device
         batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}      
 
@@ -153,10 +135,15 @@ def main():
         # Remove "action" from observations
         batch.pop("action")
 
+        # # Inject noise in state to see divergence
+        # std_noise = 0.1
+        # batch["observation.state"][:, :-1] += torch.randn_like(batch["observation.state"][:, :-1]) * std_noise
+
         # Inference
         with torch.inference_mode():
             action = policy.select_action(batch) # (B, D) --> (B, D)
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
+            print("step: ", step)
 
         # Move to CPU
         action = action.squeeze(0).to("cpu")

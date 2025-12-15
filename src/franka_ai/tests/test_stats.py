@@ -11,7 +11,7 @@ from franka_ai.dataset.utils import load_episodes_stats_patch, LeRobotDatasetPat
 """
 Run the code: 
 
-python src/franka_ai/tests/test_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers --config config1
+python src/franka_ai/tests/test_stats.py --dataset /mnt/Data/datasets/lerobot/single_outliers --config config1
 python src/franka_ai/tests/test_stats.py --dataset /workspace/data/single_outliers --config config1
 """
 

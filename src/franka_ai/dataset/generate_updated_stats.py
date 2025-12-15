@@ -15,7 +15,7 @@ from franka_ai.dataset.utils import get_configs_dataset, build_delta_timestamps,
 """
 Run the code: 
 
-python src/franka_ai/dataset/generate_updated_stats.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single/single_outliers --config config1
+python src/franka_ai/dataset/generate_updated_stats.py --dataset /mnt/Data/datasets/lerobot/single_outliers --config config1
 python src/franka_ai/dataset/generate_updated_stats.py --dataset /workspace/data/today_data/today_outliers --config config1
 """
 

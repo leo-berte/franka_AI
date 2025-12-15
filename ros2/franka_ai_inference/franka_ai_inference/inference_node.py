@@ -29,11 +29,13 @@ Play rosbag: ros2 bag play bag1.db3
 
 # TODO:
 
-# PAST_ACTIONS viene ricreata da output policy.. creare transofrm_inverse per gestirlo senza riscrivere codice per ogni ablation
+# Tune controller, Adrien overrride velocity limtis and functions to bring robot in desired initial position
+
+# 0) PAST_ACTIONS viene ricreata da output policy.. creare transofrm_inverse per gestirlo senza riscrivere codice per ogni ablation
 # --> questo viene fatto per observation perchè ricreo STATE del dataset e transformrs poi lo trattano based on yaml
 
-# 0) build_obs synchronization and feed directly the model observation --> generate_actions(obs) with in:(B, N_hist, D) --> out:(N_chunk, D)
-# 1) traj stitching
+# 1) build_obs synchronization and feed directly the model observation --> generate_actions(obs) with in:(B, N_hist, D) --> out:(N_chunk, D)
+# 2) traj stitching
 
 
 

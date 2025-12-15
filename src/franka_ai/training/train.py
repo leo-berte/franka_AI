@@ -23,10 +23,14 @@ from franka_ai.models.factory import get_policy_config_class, make_policy, get_p
 """
 Run the code: 
 
-python src/franka_ai/training/train.py --dataset /home/leonardo/Documents/Coding/franka_AI/data/single_outliers --config config1 --policy diffusion
+python src/franka_ai/training/train.py ---dataset /mnt/Data/datasets/lerobot/single_outliers \ 
+                                       --config config1 \
+                                       --policy diffusion \
                                        --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints/.....
 
-python src/franka_ai/training/train.py --dataset /workspace/data/single_outliers --config config1 --policy diffusion
+python src/franka_ai/training/train.py --dataset /workspace/data/single_outliers \
+                                       --config config1 \
+                                       --policy diffusion \
                                        --pretrained /workspace/outputs/checkpoints/....
 
 Activate tensorboard (from where there is this code): 
@@ -40,7 +44,6 @@ http://localhost:6006/#timeseries
 
 # 1) Handle correctly pre-training (i.e. I add Fext in input features for example)
 # 2) Optimize training (see notes
-
 
 
 
