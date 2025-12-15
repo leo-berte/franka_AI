@@ -99,7 +99,7 @@ class ACTPolicyPatch(PreTrainedPolicy):
         batch = self.normalize_inputs(batch)
         if self.config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch["observation.images"] = [batch[key] for key in self.config.image_features]
+            batch["observation.images"] = [torch.flatten(batch[key], start_dim=1, end_dim=2) for key in self.config.image_features]
 
         # If we are doing temporal ensembling, do online updates where we keep track of the number of actions
         # we are ensembling over.
@@ -336,7 +336,7 @@ class ACTPatch(nn.Module):
                 [cls_joint_is_pad, batch["action_is_pad"]], axis=1
             )  # (bs, seq+1 or 2)
 
-            print(vae_encoder_input.permute(1, 0, 2).shape, key_padding_mask.shape, batch["action_is_pad"], batch["frame_index"], batch["episode_index"])
+            #print(vae_encoder_input.permute(1, 0, 2).shape, key_padding_mask.shape, batch["action_is_pad"], batch["frame_index"], batch["episode_index"])
 
             # Forward pass through VAE encoder to get the latent PDF parameters.
             cls_token_out = self.vae_encoder(
