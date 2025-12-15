@@ -157,7 +157,10 @@ class CustomTransforms():
         w = torch.cos(half)
         xyz = axis * torch.sin(half)
 
-        return torch.cat([xyz, w], dim=-1)
+        quat = torch.cat([xyz, w], dim=-1)
+        quat_normalized = quat / (torch.norm(quat) + 1e-8)
+
+        return quat_normalized
 
     def transform(self, sample):
 
