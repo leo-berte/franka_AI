@@ -3,11 +3,6 @@ import os
 import yaml
 
 
-# TODO:
-# 1) magari in input setup_folders accetta policy name o percorso di caricamento pesi dall utente?
-
-
-
 # ---------
 # FUNCTIONS
 # ---------

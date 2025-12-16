@@ -12,6 +12,7 @@ docker run -it --rm \
     -v $(pwd)/src/franka_ai:/workspace/src/franka_ai \
     -v $(pwd)/configs:/workspace/configs \
     -v $(pwd)/setup.py:/workspace/setup.py \
+    -v $(pwd)/launch_training.sh:/workspace/launch_training.sh \
     -v /mnt/Data/datasets/lerobot:/workspace/data \
     -v $(pwd)/outputs:/workspace/outputs \
     -w /workspace \

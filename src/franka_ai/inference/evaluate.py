@@ -15,7 +15,15 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                           --checkpoint outputs/checkpoints/single_outliers_diffusion_2025-12-14_20-04-38 \
+                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-15_16-41-39 \
+                                           --policy act
+
+python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
+                                           --checkpoint /workspace/outputs/checkpoints/single_outliers_act_2025-12-15_16-41-39 \
+                                           --policy act
+
+python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
+                                           --checkpoint /workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-08_15-14-40 \
                                            --policy diffusion
 """
 
@@ -142,6 +150,7 @@ def main():
         # Inference
         with torch.inference_mode():
             action = policy.select_action(batch) # (B, D) --> (B, D)
+            # action = torch.zeros((1,6))
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
             print("step: ", step)
 
@@ -172,6 +181,13 @@ def main():
         # with self.buffer_lock:
         #     self.buffers["action"].append((self.get_clock().now().to_msg(), action_pre_tf))
 
+        if step==7:
+            break
+
+    # Plotting
+
+    checkpoint_name = os.path.basename(checkpoint_path)
+    
     # Plot tracking errors
 
     real_actions = np.stack(real_action_list)   # (T, D)
@@ -222,12 +238,14 @@ def main():
     axs[-1].set_xlabel("Timestep")
     fig.suptitle("End-effector position tracking")
     plt.tight_layout()
+    plt.figtext(0.99, 0.01, f"Checkpoint: {checkpoint_name}", ha="right", va="bottom", fontsize=10, color="gray")
     plt.savefig(os.path.join(img_dir, "xyz_tracking.jpeg"), format="jpeg", dpi=200)
     plt.show()
     plt.close()
 
     # Plot position error norm
     plt.figure(figsize=(10, 4))
+    fig = plt.gcf()
     plt.plot(t, pos_error_norm, label=f"Mean: {mean_pos_error:.4f} m")
     plt.ylabel("||pos error|| [m]")
     plt.xlabel("Timestep")
@@ -235,6 +253,7 @@ def main():
     plt.title("Cartesian position error")
     plt.legend()
     plt.tight_layout()
+    plt.figtext(0.99, 0.01, f"Checkpoint: {checkpoint_name}", ha="right", va="bottom", fontsize=10, color="gray")
     plt.savefig(os.path.join(img_dir, "pos_error.jpeg"), format="jpeg", dpi=200)
     plt.show()
     plt.close()
@@ -248,6 +267,7 @@ def main():
     plt.title("Orientation tracking error")
     plt.legend()
     plt.tight_layout()
+    plt.figtext(0.99, 0.01, f"Checkpoint: {checkpoint_name}", ha="right", va="bottom", fontsize=10, color="gray")
     plt.savefig(os.path.join(img_dir, "ori_error.jpeg"), format="jpeg", dpi=200)
     plt.show()
     plt.close()
@@ -264,6 +284,7 @@ def main():
         plt.legend(title=f"Accuracy: {accuracy*100:.2f}%")
         plt.title("Gripper command tracking")
         plt.tight_layout()
+        plt.figtext(0.99, 0.01, f"Checkpoint: {checkpoint_name}", ha="right", va="bottom", fontsize=10, color="gray")
         plt.savefig(os.path.join(img_dir, "gripper_tracking.jpeg"), format="jpeg", dpi=200)
         plt.show()
         plt.close()
