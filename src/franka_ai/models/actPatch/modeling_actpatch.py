@@ -99,7 +99,7 @@ class ACTPolicyPatch(PreTrainedPolicy):
         batch = self.normalize_inputs(batch)
         if self.config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch["observation.images"] = [torch.flatten(batch[key], start_dim=1, end_dim=2) for key in self.config.image_features]
+            batch["observation.images"] = [batch[key] for key in self.config.image_features]
 
         # If we are doing temporal ensembling, do online updates where we keep track of the number of actions
         # we are ensembling over.
