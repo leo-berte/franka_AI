@@ -28,6 +28,7 @@ python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outl
 """
 
 
+
 def parse_args():
 
     # set parser
@@ -150,12 +151,12 @@ def main():
         # Inference
         with torch.inference_mode():
             action = policy.select_action(batch) # (B, D) --> (B, D)
-            # action = torch.zeros((1,6))
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
             print("step: ", step)
 
         # Move to CPU
         action = action.squeeze(0).to("cpu")
+        print(action)
 
         # Convert axis-angle to quaternion
         quat = CustomTransforms.axis_angle2quaternion(action[3:6])
@@ -180,9 +181,6 @@ def main():
         # # Save action in buffer safely --> con dataloader se uso past actions = true come faccio? input policy è batch dataloader, devo mettere output policy
         # with self.buffer_lock:
         #     self.buffers["action"].append((self.get_clock().now().to_msg(), action_pre_tf))
-
-        if step==7:
-            break
 
     # Plotting
 
