@@ -248,6 +248,8 @@ class CustomTransforms():
                 future_actions = v_new[:, self.N_history:, :] # (B, N_c, D)
                 sample[k] = future_actions
 
+        sample["action_is_pad"] = sample["action_is_pad"][:,self.N_history:]
+
         # append past actions to state if requested
         if self.use_past_actions:
             state_ft_name = self.feature_groups["STATE"][0]
@@ -258,5 +260,7 @@ class CustomTransforms():
 
         # drop unwanted features
         sample = {k: v for k, v in sample.items() if k not in self.skip_features}
+
+        #print("transform", {k:v.shape for k,v in sample.items() if k != "task"})
 
         return sample

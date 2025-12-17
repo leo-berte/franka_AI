@@ -9,6 +9,9 @@ def get_policy_class(policy_name):
         # from lerobot.common.policies.act.modeling_act import ACTPolicy
         from franka_ai.models.actPatch.modeling_actpatch import ACTPolicyPatch
         return ACTPolicyPatch
+    elif policy_name == "flow":
+        from franka_ai.models.flow.modeling_flow import FlowPolicy
+        return FlowPolicy
     else:
         raise NotImplementedError(f"Policy with name {policy_name} is not implemented.")
 
@@ -21,6 +24,9 @@ def get_policy_config_class(policy_name):
         # from lerobot.common.policies.act.configuration_act import ACTConfig
         from franka_ai.models.actPatch.configuration_actpatch import ACTConfigPatch
         return ACTConfigPatch
+    elif policy_name == "flow":
+        from franka_ai.models.flow.configuration_flow import FlowConfig
+        return FlowConfig
     else:
         raise NotImplementedError(f"Policy with name {policy_name} is not implemented.")
 

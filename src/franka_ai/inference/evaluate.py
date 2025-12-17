@@ -45,7 +45,7 @@ def parse_args():
         help="Absolute path to the checkpoint folder")
     
     parser.add_argument("--policy", type=str, default="diffusion",
-                    choices=["diffusion", "act"],
+                    choices=["diffusion", "act", "flow"],
                     help="Policy name")
     
     args = parser.parse_args()
@@ -108,6 +108,7 @@ def main():
     # Load policy
     PolicyClass = get_policy_class(policy_name)
     policy = PolicyClass.from_pretrained(f"{checkpoint_path}/best_model.pt")
+    #policy.eval()
     policy.reset() # reset the policy to prepare for rollout
 
     # Create loaders
@@ -129,7 +130,7 @@ def main():
         batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}      
 
         # Save real action from dataset
-        real_action = batch["action"][:, N_history, ...].to("cpu").numpy() # (B, D)
+        real_action = batch["action"][:, 0, ...].to("cpu").numpy() # (B, D)
         real_action_list.append(real_action.squeeze(0))  
 
         # Apply custom transforms
@@ -148,15 +149,22 @@ def main():
         # std_noise = 0.1
         # batch["observation.state"][:, :-1] += torch.randn_like(batch["observation.state"][:, :-1]) * std_noise
 
+        #print("eval", {k:v.shape for k,v in batch.items() if k != "task"})
+
+        batch = {"observation.state":batch["observation.state"], "observation.images.front_cam1":batch["observation.images.front_cam1"]}
+
+        #print("eval final", {k:v.shape for k,v in batch.items() if k != "task"})
+        #print(torch.linalg.norm(batch["observation.images.front_cam1"]))
+
         # Inference
         with torch.inference_mode():
             action = policy.select_action(batch) # (B, D) --> (B, D)
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
-            print("step: ", step)
+            print("step: ", step, policy.training)
 
         # Move to CPU
         action = action.squeeze(0).to("cpu")
-        print(action)
+        print(action, real_action)
 
         # Convert axis-angle to quaternion
         quat = CustomTransforms.axis_angle2quaternion(action[3:6])

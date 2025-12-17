@@ -4,10 +4,10 @@
 
 training:
 
-  training_steps: 18000    # number of training steps
-  log_freq: 200            # logs train loss, gradNorm, lr
-  eval_freq: 2000          # logs eval loss
-  save_ckpt_freq: 6000     # save checkpoints
+  training_steps: 100000    # number of training steps
+  log_freq: 50            # logs train loss, gradNorm, lr
+  eval_freq: 10000          # logs eval loss
+  save_ckpt_freq: 10000     # save checkpoints
   learning_rate: 0.0005
   lr_warmup_steps: 500
   weight_decay: 0.0001

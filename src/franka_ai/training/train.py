@@ -58,7 +58,7 @@ def parse_args():
                         help="Absolute path to pretrained checkpoint")
 
     parser.add_argument("--policy", type=str, required=True,
-                        choices=["diffusion", "act"],
+                        choices=["diffusion", "act", "flow"],
                         help="Policy name")
     
     parser.add_argument("--config", type=str, default="config",
@@ -226,6 +226,9 @@ def train():
             
             # Apply custom transforms
             batch = transforms_train.transform(batch) # in/out: (B, N_h, ...)
+
+            #print({k:v.shape for k,v in batch.items() if k != "task"})
+            #print(torch.linalg.norm(batch["observation.images.front_cam1"]))
 
             # Computes the loss (and optionally predictions)
             loss, _ = policy.forward(batch)

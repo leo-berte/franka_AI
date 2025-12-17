@@ -136,7 +136,7 @@ class ACTPolicyPatch(PreTrainedPolicy):
         batch = self.normalize_inputs(batch)
         if self.config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch["observation.images"] = [torch.flatten(batch[key], start_dim=1, end_dim=2) for key in self.config.image_features]
+            batch["observation.images"] = [batch[key] for key in self.config.image_features]
 
         # If we are doing temporal ensembling, do online updates where we keep track of the number of actions
         # we are ensembling over.
@@ -163,10 +163,13 @@ class ACTPolicyPatch(PreTrainedPolicy):
             batch["observation.images"] = [torch.flatten(batch[key], start_dim=1, end_dim=2) for key in self.config.image_features]
 
         batch = self.normalize_targets(batch)
+
+        #print("imgshape", [img.shape for img in batch["observation.images"]])
+
         actions_hat, (mu_hat, log_sigma_x2_hat) = self.model(batch)
 
         l1_loss = (
-            F.l1_loss(batch["action"], actions_hat, reduction="none") * ~batch["action_is_pad"][:,self.config.n_obs_steps:].unsqueeze(-1)
+            F.l1_loss(batch["action"], actions_hat, reduction="none") * ~batch["action_is_pad"].unsqueeze(-1)
         ).mean()
 
         loss_dict = {"l1_loss": l1_loss.item()}
@@ -211,8 +214,8 @@ class ACTPatch(nn.Module):
             # Fixed sinusoidal positional embedding for the input to the VAE encoder. Unsqueeze for batch
             # dimension.
             num_input_token_encoder = 1 + config.chunk_size
-            if self.config.robot_state_feature:
-                num_input_token_encoder += 1
+            #if self.config.robot_state_feature: #TODO:bigmodif
+            #    num_input_token_encoder += 1 #TODO:bigmodif
             self.register_buffer(
                 "vae_encoder_pos_enc",
                 create_sinusoidal_pos_embedding(num_input_token_encoder, config.dim_model).unsqueeze(0),
@@ -252,7 +255,7 @@ class ACTPatch(nn.Module):
         # Transformer encoder positional embeddings.
         n_1d_tokens = 1  # for the latent
         if self.config.robot_state_feature:
-            n_1d_tokens += 1
+            n_1d_tokens += 1 
         if self.config.env_state_feature:
             n_1d_tokens += 1
         self.encoder_1d_feature_pos_embed = nn.Embedding(n_1d_tokens, config.dim_model)
@@ -309,13 +312,13 @@ class ACTPatch(nn.Module):
             cls_embed = einops.repeat(
                 self.vae_encoder_cls_embed.weight, "1 d -> b 1 d", b=batch_size
             )  # (B, 1, D)
-            if self.config.robot_state_feature:
-                robot_state_embed = self.vae_encoder_robot_state_input_proj(batch["observation.state"])
+            #if self.config.robot_state_feature: #TODO:bigmodif
+                #robot_state_embed = self.vae_encoder_robot_state_input_proj(batch["observation.state"]) #TODO:bigmodif
             action_embed = self.vae_encoder_action_input_proj(batch["action"])  # (B, S, D)
 
             #print(cls_embed.shape, robot_state_embed.shape, action_embed.shape)
             if self.config.robot_state_feature:
-                vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
+                vae_encoder_input = [cls_embed, action_embed] # [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D) #TODO:bigmodif
             else:
                 vae_encoder_input = [cls_embed, action_embed]
             vae_encoder_input = torch.cat(vae_encoder_input, axis=1)
@@ -328,15 +331,13 @@ class ACTPatch(nn.Module):
             # sequence depending whether we use the input states or not (cls and robot state)
             # False means not a padding token.
             cls_joint_is_pad = torch.full(
-                (batch_size, 1),
+                (batch_size, 1), #2 if self.config.robot_state_feature else 1), #TODO:bigmodif
                 False,
                 device=batch["observation.state"].device,
             )
             key_padding_mask = torch.cat(
                 [cls_joint_is_pad, batch["action_is_pad"]], axis=1
             )  # (bs, seq+1 or 2)
-
-            #print(vae_encoder_input.permute(1, 0, 2).shape, key_padding_mask.shape, batch["action_is_pad"], batch["frame_index"], batch["episode_index"])
 
             # Forward pass through VAE encoder to get the latent PDF parameters.
             cls_token_out = self.vae_encoder(
@@ -365,7 +366,10 @@ class ACTPatch(nn.Module):
         # Robot state token.
         if self.config.robot_state_feature:
             #TODO:BIG MODIF
+            #print(batch["observation.state"].shape)#, batch["action_is_pad"].shape)
             encoder_in_tokens.append(self.encoder_robot_state_input_proj(batch["observation.state"].squeeze(1)))
+            #print("enc :", [encoder_in.shape for encoder_in in encoder_in_tokens])
+
         # Environment state token.
         if self.config.env_state_feature:
             encoder_in_tokens.append(
@@ -419,6 +423,8 @@ class ACTPatch(nn.Module):
         decoder_out = decoder_out.transpose(0, 1)
 
         actions = self.action_head(decoder_out)
+
+        #print("actions", actions, "/", batch["action"])
 
         return actions, (mu, log_sigma_x2)
     
@@ -484,7 +490,6 @@ class ACTRgbEncoder(nn.Module):
             else:
                 # Always use center crop for eval.
                 x = self.center_crop(x)
-        
+                
         return self.backbone(x)["feature_map"] #Resnet
         return self.backbone(x) #ViT
-    
