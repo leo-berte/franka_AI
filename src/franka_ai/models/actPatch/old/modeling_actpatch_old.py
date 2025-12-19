@@ -255,7 +255,7 @@ class ACTPatch(nn.Module):
         # Transformer encoder positional embeddings.
         n_1d_tokens = 1  # for the latent
         if self.config.robot_state_feature:
-            n_1d_tokens += 1 
+            n_1d_tokens += 1
         if self.config.env_state_feature:
             n_1d_tokens += 1
         self.encoder_1d_feature_pos_embed = nn.Embedding(n_1d_tokens, config.dim_model)

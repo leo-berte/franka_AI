@@ -5,7 +5,7 @@
 diffusion: 
 
   params:
-    n_obs_steps: 1
+    n_obs_steps: 5
     horizon: 16    
     n_action_steps: 8
 
@@ -19,27 +19,23 @@ act:
   params:
     n_obs_steps: 1
     chunk_size: 50   
-    n_action_steps: 25
-    # use_vae: "False"
-    # kl_weight: 0.0
+    n_action_steps: 50
 
   sampling:
-    fps_sampling_hist: 10
-    fps_sampling_chunk: 10
+    fps_sampling_hist: 30
+    fps_sampling_chunk: 30
 
 
-flow: 
+act_mathis:
 
   params:
     n_obs_steps: 1
-    horizon: 16    
-    n_action_steps: 8
-    #vision_backbone: "vit_b_16"
-    #pretrained_backbone_weights: "ViT_B_16_Weights.IMAGENET1K_V1"
+    chunk_size: 50   
+    n_action_steps: 50
 
   sampling:
-    fps_sampling_hist: 10
-    fps_sampling_chunk: 10
+    fps_sampling_hist: 30
+    fps_sampling_chunk: 30
 
 
 my_policy:

@@ -7,6 +7,14 @@ from torch.utils.tensorboard import SummaryWriter
 from lerobot.configs.types import FeatureType, PolicyFeature, NormalizationMode
 
 
+
+# TODO:
+
+# Ripristina: dataset_to_policy_features_patch
+
+
+
+
 # ---------
 # FUNCTIONS
 # ---------
@@ -90,6 +98,22 @@ def dataset_to_policy_features_patch(dataloader, features, transforms):
 
     # apply custom transforms to have the batch in the final shape
     batch = transforms.transform(batch) 
+
+
+
+    # TEMP
+    import torch
+    B = batch["observation.images.front_cam1"].shape[0]
+    device = batch["observation.images.front_cam1"].device
+    dtype = batch["observation.images.front_cam1"].dtype
+
+    batch["observation.images.front_cam1"] = torch.zeros(
+        (B, 3, 192, 144),
+        device=device,
+        dtype=dtype,
+    )
+    
+
 
     policy_features = {}
 

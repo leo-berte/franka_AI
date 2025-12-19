@@ -13,6 +13,7 @@ from lerobot.configs.types import FeatureType
 
 # TODO: 
 # 1) Do I want images close to each others or far in time? 
+# 2) rimettere: full_actions = action_history + chunk
 
 
 # -------
@@ -28,10 +29,8 @@ class LeRobotDatasetPatch(LeRobotDataset):
         current_ep_idx = self.episodes.index(ep_idx) if self.episodes is not None else ep_idx
         return super()._get_query_indices(idx, current_ep_idx)
 
-
 class MultiLeRobotDatasetPatch(MultiLeRobotDataset):
-
-    def init(
+    def __init__(
         self,
         repo_ids: list[str],
         root: str | Path | None = None,
@@ -42,9 +41,9 @@ class MultiLeRobotDatasetPatch(MultiLeRobotDataset):
         download_videos: bool = True,
         video_backend: str | None = None,
     ):
-        super().init(repo_ids, root, episodes, image_transforms, delta_timestamps, tolerances_s, download_videos, video_backend)
-
-        # Construct the underlying datasets passing everything but `transform` and `delta_timestamps` which are handled by this class.
+        super().__init__(repo_ids, root, episodes, image_transforms, delta_timestamps, tolerances_s, download_videos, video_backend)
+        # Construct the underlying datasets passing everything but `transform` and `delta_timestamps` which
+        # are handled by this class.
         self._datasets = [
             LeRobotDatasetPatch(
                 repo_id,
@@ -81,7 +80,12 @@ class MultiLeRobotDatasetPatch(MultiLeRobotDataset):
 
         self.image_transforms = image_transforms
         self.delta_timestamps = delta_timestamps
+        # TODO(rcadene, aliberts): We should not perform this aggregation for datasets
+        # with multiple robots of different ranges. Instead we should have one normalization
+        # per robot.
         self.stats = aggregate_stats([dataset.meta.stats for dataset in self._datasets])
+
+
 
 
 # ---------
@@ -128,7 +132,8 @@ def build_delta_timestamps(feature_groups, N_h, N_c, fps_dataset, fps_sampling_h
     chunk   = [(i * step_chunk * dt_dataset) for i in range(0, N_c)]
 
     # Combine history + chunk to potentially extrapolate also past actions
-    full_actions = action_history + chunk
+    # full_actions = action_history + chunk
+    full_actions = chunk
 
     # create dict
     delta_timestamps = {}

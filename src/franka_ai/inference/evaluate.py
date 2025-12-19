@@ -15,9 +15,43 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-15_16-41-39 \
+                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-18_09-30-26 \
                                            --policy act
 
+
+
+python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
+                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-18_10-13-46 \
+                                           --policy act
+
+
+python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
+                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-18_10-29-22 \
+                                           --policy act
+
+                                           
+python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
+                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-18_12-03-22 \
+                                           --policy act
+
+
+python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
+                                           --checkpoint outputs/checkpoints/single_outliers1__act_10_50_best_adam \
+                                           --policy act_patch
+
+
+
+
+
+
+
+# This has images not blanked
+python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
+                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-17_15-50-27 \
+                                           --policy act
+
+                                           
+                                           
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
                                            --checkpoint /workspace/outputs/checkpoints/single_outliers_act_2025-12-15_16-41-39 \
                                            --policy act
@@ -26,6 +60,13 @@ python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outl
                                            --checkpoint /workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-08_15-14-40 \
                                            --policy diffusion
 """
+
+
+
+
+# TODO: 
+
+# 1) Forse devo mettere policygriper2robotgripper continuos2discrte con soglia a 0,5 no 0,037
 
 
 
@@ -45,7 +86,7 @@ def parse_args():
         help="Absolute path to the checkpoint folder")
     
     parser.add_argument("--policy", type=str, default="diffusion",
-                    choices=["diffusion", "act", "flow"],
+                    choices=["diffusion", "act", "flow", "act_mathis"],
                     help="Policy name")
     
     args = parser.parse_args()
@@ -108,11 +149,10 @@ def main():
     # Load policy
     PolicyClass = get_policy_class(policy_name)
     policy = PolicyClass.from_pretrained(f"{checkpoint_path}/best_model.pt")
-    #policy.eval()
     policy.reset() # reset the policy to prepare for rollout
 
     # Create loaders
-    train_loader, _, val_loader, _ = make_dataloader(
+    train_loader, _, val_loader, _, _ = make_dataloader(
         dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
@@ -129,8 +169,32 @@ def main():
         # Move data to device
         batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}      
 
+
+        # TEMP
+        # batch["observation.images.front_cam1"] = torch.zeros_like(batch["observation.images.front_cam1"])
+        B = batch["observation.images.front_cam1"].shape[0]
+        device = batch["observation.images.front_cam1"].device
+        dtype = batch["observation.images.front_cam1"].dtype
+
+        batch["observation.images.front_cam1"] = torch.zeros(
+            (B, 3, 192, 144),
+            device=device,
+            dtype=dtype,
+        )
+        
+
+        batch.pop("observation.images.front_cam2")
+        batch.pop("observation.images.front_cam3")
+        batch.pop("observation.images.gripper_camera")
+        batch.pop("observation.images.gripper_camera_depth")
+        
+
+
+
         # Save real action from dataset
-        real_action = batch["action"][:, 0, ...].to("cpu").numpy() # (B, D)
+        # real_action = batch["action"][:, 0, ...].to("cpu").numpy() # (B, D) --> mathis
+        # real_action = batch["action"][:, N_history, ...].to("cpu").numpy() # (B, D) 
+        real_action = batch["action"][:, 0, ...].to("cpu").numpy() # (B, D) 
         real_action_list.append(real_action.squeeze(0))  
 
         # Apply custom transforms
@@ -138,40 +202,53 @@ def main():
 
         # Convert (B,N_hist, D) in (B, D) by taking last timestep
         for k, v in batch.items():
-            if isinstance(v, torch.Tensor) and v.dim() >= 3:
+            if isinstance(v, torch.Tensor) and v.dim() == 3: # TEMP: rimettere >=3
                 v = v[:, -1, ...].contiguous()
                 batch[k] = v
 
         # Remove "action" from observations
         batch.pop("action")
+        # batch.pop("action_is_pad")
+        # batch.pop("observation.state_is_pad")
+        # batch.pop("observation.images.front_cam1_is_pad")
 
         # # Inject noise in state to see divergence
         # std_noise = 0.1
         # batch["observation.state"][:, :-1] += torch.randn_like(batch["observation.state"][:, :-1]) * std_noise
 
-        #print("eval", {k:v.shape for k,v in batch.items() if k != "task"})
 
-        batch = {"observation.state":batch["observation.state"], "observation.images.front_cam1":batch["observation.images.front_cam1"]}
 
-        #print("eval final", {k:v.shape for k,v in batch.items() if k != "task"})
-        #print(torch.linalg.norm(batch["observation.images.front_cam1"]))
+        # # print all keys in dataset
+        # for k, v in batch.items():
+        #     if isinstance(v, torch.Tensor):
+        #         print(k, v.shape)
+        #     else:
+        #         print(k, type(v))
+        # return
+
+
 
         # Inference
         with torch.inference_mode():
             action = policy.select_action(batch) # (B, D) --> (B, D)
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
-            print("step: ", step, policy.training)
+            print("step: ", step)
 
         # Move to CPU
         action = action.squeeze(0).to("cpu")
-        print(action, real_action)
+        
+        # # print
+        # print(action)
+        # print(real_action_list[-1])
+        # print(batch["observation.state"])
 
         # Convert axis-angle to quaternion
-        quat = CustomTransforms.axis_angle2quaternion(action[3:6])
+        # quat = CustomTransforms.axis_angle2quaternion(action[3:6])
+        quat = action[3:7]
 
-        # Convert gripper in binary {0,1}
-        if (include_gripper):
-            action[-1] = CustomTransforms.gripper_continuous2discrete(action[-1])
+        # # Convert gripper in binary {0,1}
+        # if (include_gripper):
+        #     action[-1] = CustomTransforms.gripper_continuous2discrete(action[-1])
 
         # Convert tensors to numpy
         action_np = action.numpy()
@@ -295,6 +372,32 @@ def main():
         plt.show()
         plt.close()
 
+
+
+
+
+    # --- 5. Visualisation ---
+    num_dims = pred_actions.shape[1]
+    fig, axes = plt.subplots(num_dims, 1, figsize=(12, 2 * num_dims), sharex=True)
+    if num_dims == 1: axes = [axes]
+
+    for i in range(num_dims):
+        axes[i].plot(real_actions[:, i], label="Dataset (Ground Truth)", color="blue", linestyle="--", alpha=0.7)
+        axes[i].plot(pred_actions[:, i], label="Modèle (Prédiction)", color="red", alpha=0.8)
+        axes[i].set_ylabel(f"Dim {i}")
+        axes[i].grid(True, alpha=0.3)
+        if i == 0:
+            axes[i].legend()
+
+    axes[-1].set_xlabel("Timesteps (Frames)")
+    plt.suptitle(f"Comparaison Actions : Modèle vs Dataset (Épisode 0)\n")
+    plt.tight_layout()
+    
+    # Sauvegarde du graphique
+    # plot_path = model_path + "/" + "comparison_plot.png"
+    # plt.savefig(plot_path)
+    # print(f"Graphique de comparaison sauvegardé dans : {plot_path}")
+    plt.show()
 
 
 if __name__ == "__main__":
