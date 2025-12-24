@@ -1,0 +1,24 @@
+# --------
+# TRAINING
+# --------
+
+training:
+
+  training_steps: 4000     # number of training steps
+  log_freq: 200            # logs train loss, gradNorm, lr
+  eval_freq: 400           # logs eval loss
+  save_ckpt_freq: 2000     # save checkpoints
+  learning_rate: 0.00001
+  lr_warmup_steps: 150     # around 5-10% of training steps
+  weight_decay:  0.001 
+
+
+# -------------
+# NORMALIZATION
+# -------------
+
+normalization_mapping:
+
+  VISUAL: "MEAN_STD"
+  STATE: "MEAN_STD"
+  ACTION: "MEAN_STD"

@@ -14,7 +14,7 @@ from lerobot.common.policies.act.modeling_act import PreTrainedPolicy, F, deque,
 
 #from lerobot.common.policies.flow.modeling_flow import FlowPolicy
 #from lerobot.common.policies.flow.configuration_flow import FlowConfig
-from franka_ai.models.actPatch.configuration_actpatch import ACTConfigPatch
+from franka_ai.models.actPatch.configuration_act_mathis import ACTConfigPatch
 
 from torchvision.models._utils import IntermediateLayerGetter
     
@@ -157,15 +157,18 @@ class ACTPolicyPatch(PreTrainedPolicy):
 
     def forward(self, batch):
         """Run the batch through the model and compute the loss for training or validation."""
+        
+        # PATCH: remove time dimension from images
+        for k, v in batch.items():
+            if isinstance(v, torch.Tensor) and v.dim() == 5:  # (B, N_h, C, H, W)
+                batch[k] = v.squeeze(1)  # (B, C, H, W)
+        
         batch = self.normalize_inputs(batch)
         if self.config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch["observation.images"] = [torch.flatten(batch[key], start_dim=1, end_dim=2) for key in self.config.image_features]
+            batch["observation.images"] = [batch[key] for key in self.config.image_features]
 
         batch = self.normalize_targets(batch)
-
-        #print("imgshape", [img.shape for img in batch["observation.images"]])
-
         actions_hat, (mu_hat, log_sigma_x2_hat) = self.model(batch)
 
         l1_loss = (
@@ -214,8 +217,8 @@ class ACTPatch(nn.Module):
             # Fixed sinusoidal positional embedding for the input to the VAE encoder. Unsqueeze for batch
             # dimension.
             num_input_token_encoder = 1 + config.chunk_size
-            #if self.config.robot_state_feature: #TODO:bigmodif
-            #    num_input_token_encoder += 1 #TODO:bigmodif
+            if self.config.robot_state_feature:
+                num_input_token_encoder += 1
             self.register_buffer(
                 "vae_encoder_pos_enc",
                 create_sinusoidal_pos_embedding(num_input_token_encoder, config.dim_model).unsqueeze(0),
@@ -255,7 +258,7 @@ class ACTPatch(nn.Module):
         # Transformer encoder positional embeddings.
         n_1d_tokens = 1  # for the latent
         if self.config.robot_state_feature:
-            n_1d_tokens += 1 
+            n_1d_tokens += 1
         if self.config.env_state_feature:
             n_1d_tokens += 1
         self.encoder_1d_feature_pos_embed = nn.Embedding(n_1d_tokens, config.dim_model)
@@ -312,13 +315,13 @@ class ACTPatch(nn.Module):
             cls_embed = einops.repeat(
                 self.vae_encoder_cls_embed.weight, "1 d -> b 1 d", b=batch_size
             )  # (B, 1, D)
-            #if self.config.robot_state_feature: #TODO:bigmodif
-                #robot_state_embed = self.vae_encoder_robot_state_input_proj(batch["observation.state"]) #TODO:bigmodif
+            if self.config.robot_state_feature:
+                robot_state_embed = self.vae_encoder_robot_state_input_proj(batch["observation.state"])
             action_embed = self.vae_encoder_action_input_proj(batch["action"])  # (B, S, D)
 
             #print(cls_embed.shape, robot_state_embed.shape, action_embed.shape)
             if self.config.robot_state_feature:
-                vae_encoder_input = [cls_embed, action_embed] # [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D) #TODO:bigmodif
+                vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
             else:
                 vae_encoder_input = [cls_embed, action_embed]
             vae_encoder_input = torch.cat(vae_encoder_input, axis=1)
@@ -331,7 +334,7 @@ class ACTPatch(nn.Module):
             # sequence depending whether we use the input states or not (cls and robot state)
             # False means not a padding token.
             cls_joint_is_pad = torch.full(
-                (batch_size, 1), #2 if self.config.robot_state_feature else 1), #TODO:bigmodif
+                (batch_size, 2 if self.config.robot_state_feature else 1),
                 False,
                 device=batch["observation.state"].device,
             )
@@ -368,8 +371,6 @@ class ACTPatch(nn.Module):
             #TODO:BIG MODIF
             #print(batch["observation.state"].shape)#, batch["action_is_pad"].shape)
             encoder_in_tokens.append(self.encoder_robot_state_input_proj(batch["observation.state"].squeeze(1)))
-            #print("enc :", [encoder_in.shape for encoder_in in encoder_in_tokens])
-
         # Environment state token.
         if self.config.env_state_feature:
             encoder_in_tokens.append(
@@ -424,7 +425,7 @@ class ACTPatch(nn.Module):
 
         actions = self.action_head(decoder_out)
 
-        #print("actions", actions, "/", batch["action"])
+        #print("actions", actions)
 
         return actions, (mu, log_sigma_x2)
     
@@ -493,3 +494,4 @@ class ACTRgbEncoder(nn.Module):
                 
         return self.backbone(x)["feature_map"] #Resnet
         return self.backbone(x) #ViT
+    

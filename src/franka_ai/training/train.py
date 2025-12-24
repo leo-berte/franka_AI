@@ -42,11 +42,11 @@ http://localhost:6006/#timeseries
 
 # TODO:
 
+
 # 1) Handle correctly pre-training (i.e. I add Fext in input features for example)
 # 2) Optimize training (see notes
 
-
-
+ 
 def parse_args():
 
     parser = argparse.ArgumentParser()
@@ -58,7 +58,7 @@ def parse_args():
                         help="Absolute path to pretrained checkpoint")
 
     parser.add_argument("--policy", type=str, required=True,
-                        choices=["diffusion", "act", "flow"],
+                        choices=["diffusion", "act", "act_mathis", "flow"],
                         help="Policy name")
     
     parser.add_argument("--config", type=str, default="config",
@@ -120,13 +120,13 @@ def train():
         raise ValueError("save_ckpt_freq must be >= eval_freq and a multiple of it")
     if training_steps % save_ckpt_freq != 0:
         raise ValueError("training_steps must be a multiple of save_ckpt_freq to ensure final evaluation alignment")
-    
+
     # Eventually freeze seed for reproducibility
     if seed_val is not None and seed_val >= 0:
         seed_everything(seed_val)
 
     # Prepare transforms for training, inference and for computing dataset stats
-    transforms_train = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=True) 
+    transforms_train = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=False) 
     transforms_val = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=False)
 
     # Create loaders
@@ -140,7 +140,7 @@ def train():
     # ---------------------
     # POLICY INITIALIZATION
     # ---------------------
-
+    
     if pretrained_path:
 
         # Load from checkpoint
@@ -149,7 +149,7 @@ def train():
         print(f"Loaded pretrained policy from {pretrained_path}")
 
     else:
-
+    
         # Get dataset input/output stats
         features = dataset_to_policy_features_patch(train_loader, dataset_cfg["features"], transforms_train)
         output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
@@ -159,7 +159,7 @@ def train():
         
         # Define normalization and unnormalization mode 
         normalization_mapping = parse_normalization_mapping(normalization_cfg)
-
+        
         # Get policy configuration class
         ConfigClass = get_policy_config_class(policy_name)
 
@@ -169,7 +169,7 @@ def train():
             normalization_mapping=normalization_mapping,
             **models_cfg[policy_name]["params"]
         )
-                            
+
         # Get episodes stats
         episode_stats_path = Path(f"configs/{config_folder}") / "episodes_stats_transformed.jsonl"
         episodes_stats = load_episodes_stats_patch(episode_stats_path)
@@ -178,7 +178,7 @@ def train():
         # Save transformed stats in checkpoint dir as backup
         dst_path = Path(checkpoints_dir) / "episodes_stats_transformed.jsonl"
         shutil.copy(episode_stats_path, dst_path)
-
+        
         # Setup policy
         policy = make_policy(policy_name, cfg, dataset_stats=new_dataset_stats)
 
@@ -187,12 +187,12 @@ def train():
     policy.to(device)
 
     # Optimizer
-    optimizer = torch.optim.AdamW(policy.parameters(), lr=learning_rate, betas=(0.9, 0.999), weight_decay=weight_decay)
+    optimizer = torch.optim.AdamW(policy.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     # Linear LR scheduler for warmup (from start_factor*lr to lr)
-    warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=lr_warmup_steps)
+    warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=lr_warmup_steps)
     # Cosine LR scheduler after warmup (from lr to eta_min)
-    cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=training_steps - lr_warmup_steps, eta_min=learning_rate * 0.1)
+    cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=training_steps - lr_warmup_steps, eta_min=learning_rate * 0.5)
     # Sequential LR scheduler
     scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[lr_warmup_steps])
 
@@ -215,7 +215,9 @@ def train():
     while not done:
 
         for batch in train_loader:
-            
+
+            # print("transform", {k:v.shape for k,v in batch.items() if isinstance(v, torch.Tensor)})
+        
             # Sart timer
             if device.type == "cuda":
                 torch.cuda.synchronize()
@@ -227,11 +229,11 @@ def train():
             # Apply custom transforms
             batch = transforms_train.transform(batch) # in/out: (B, N_h, ...)
 
-            #print({k:v.shape for k,v in batch.items() if k != "task"})
-            #print(torch.linalg.norm(batch["observation.images.front_cam1"]))
+            # print("transform", {k:v.shape for k,v in batch.items() if isinstance(v, torch.Tensor)})
 
             # Computes the loss (and optionally predictions)
             loss, _ = policy.forward(batch)
+            print(loss.item())
 
             loss.backward() # compute gradients
             total_norm = clip_grad_norm_(policy.parameters(), max_norm=1.0) # measure gradients norm and clip it
@@ -239,7 +241,7 @@ def train():
             optimizer.step() # do gradient step
             scheduler.step()
             optimizer.zero_grad()
-            
+
             # Stop and store timer
             if device.type == "cuda":
                 torch.cuda.synchronize()
@@ -273,12 +275,14 @@ def train():
                 # Run evaluation on validation set
                 policy.eval()
                 val_loss_total = 0.0
+
                 with torch.no_grad():
                     for val_batch in val_loader:
                         val_batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in val_batch.items()}
                         val_batch = transforms_val.transform(val_batch) 
                         val_loss, _ = policy.forward(val_batch)
                         val_loss_total += val_loss.item()
+                
                 avg_val_loss = val_loss_total / len(val_loader)
                 val_losses.append(avg_val_loss)
                 val_steps.append(step)
@@ -332,135 +336,3 @@ if __name__ == "__main__":
     train()
 
 
-
-# ## DP
-
-# def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, None]:
-
-#     """Run the batch through the model and compute the loss for training or validation."""
-
-#     batch = self.normalize_inputs(batch)
-#     if self.config.image_features:
-#         batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-#         batch["observation.images"] = torch.stack(
-#             [batch[key] for key in self.config.image_features], dim=-4
-#         )
-#     batch = self.normalize_targets(batch)
-#     loss = self.diffusion.compute_loss(batch)
-
-#     return loss, None
-
-# def compute_loss(self, batch: dict[str, Tensor]) -> Tensor:
-
-#     """
-#     This function expects `batch` to have (at least):
-#     {
-#         "observation.state": (B, n_obs_steps, state_dim)
-
-#         "observation.images": (B, n_obs_steps, num_cameras, C, H, W)
-#             AND/OR
-#         "observation.environment_state": (B, environment_dim)
-
-#         "action": (B, horizon, action_dim)
-#     """
-
-
-
-# ## ACT
-
-#     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, dict]:
-
-#         """Run the batch through the model and compute the loss for training or validation."""
-
-#         batch = self.normalize_inputs(batch)
-#         if self.config.image_features:
-#             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-#             batch["observation.images"] = [batch[key] for key in self.config.image_features]
-
-#         batch = self.normalize_targets(batch)
-#         actions_hat, (mu_hat, log_sigma_x2_hat) = self.model(batch)
-
-#         l1_loss = (
-#             F.l1_loss(batch["action"], actions_hat, reduction="none") * ~batch["action_is_pad"].unsqueeze(-1)
-#         ).mean()
-
-#         loss_dict = {"l1_loss": l1_loss.item()}
-
-#         if self.config.use_vae:
-#             loss_dict["kld_loss"] = mean_kld.item()
-#             loss = l1_loss + mean_kld * self.config.kl_weight
-#         else:
-#             loss = l1_loss
-
-#         return loss, loss_dict
-    
-
-#     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:
-
-#         """A forward pass through the Action Chunking Transformer (with optional VAE encoder).
-
-#         `batch` should have the following structure:
-#         {
-#             [robot_state_feature] (optional): (B, state_dim) batch of robot states.
-
-#             [image_features]: (B, n_cameras, C, H, W) batch of images.
-#                 AND/OR
-#             [env_state_feature]: (B, env_dim) batch of environment states.
-
-#             [action_feature] (optional, only if training with VAE): (B, chunk_size, action dim) batch of actions.
-#         }
-
-#         Returns:
-#             (B, chunk_size, action_dim) batch of action sequences
-#             Tuple containing the latent PDF's parameters (mean, log(σ²)) both as (B, L) tensors where L is the
-#             latent dimension.
-#         """
-
-
-
-
-
-
-
-
-
-
-            # batch["observation.state"].squeeze(1)
-            # batch["observation.images.front_cam1"].squeeze(1)
-            # batch["observation.images.front_cam2"].squeeze(1)
-            # batch["observation.images.front_cam3"].squeeze(1)
-            # batch["observation.images.gripper_camera"].squeeze(1)
-
-            # batch["observation.state"] = batch["observation.state"].squeeze(1)
-
-            # cams = [
-            #     batch.pop("observation.images.front_cam1").squeeze(1),
-            #     batch.pop("observation.images.front_cam2").squeeze(1),
-            #     batch.pop("observation.images.front_cam3").squeeze(1),
-            #     batch.pop("observation.images.gripper_camera").squeeze(1),
-            # ]
-
-            # batch["observation.images"] = torch.stack(cams, dim=1)
-
-
-
-            # for k in list(batch.keys()):
-            #     if k.startswith("observation."):
-            #         # Replace time sequence with last timestep
-            #         batch[k] = batch[k][:, -1]    # (B, C, H, W)
-
-
-            # if policy.config.image_features:
-            #     batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            #     batch["observation.images"] = [batch[key] for key in policy.config.image_features]
-            #     print(len(batch["observation.images"]))
-            #     print(batch["observation.images"][0].shape)
-
-
-
-            # # print all keys in dataset
-            # for k, v in batch.items():
-            #     if isinstance(v, torch.Tensor):
-            #         print(k, v.shape)
-            #     else:
-            #         print(k, type(v))

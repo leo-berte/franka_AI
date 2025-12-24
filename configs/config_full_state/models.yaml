@@ -19,8 +19,19 @@ act:
   params:
     n_obs_steps: 1
     chunk_size: 50   
-    n_action_steps: 25
-    # use_vae: "False"
+    n_action_steps: 50
+
+  sampling:
+    fps_sampling_hist: 30
+    fps_sampling_chunk: 30
+
+
+act_mathis:
+
+  params:
+    n_obs_steps: 1
+    chunk_size: 50   
+    n_action_steps: 50
 
   sampling:
     fps_sampling_hist: 30

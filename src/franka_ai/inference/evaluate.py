@@ -15,17 +15,18 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-15_16-41-39 \
-                                           --policy act
-
-python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
-                                           --checkpoint /workspace/outputs/checkpoints/single_outliers_act_2025-12-15_16-41-39 \
+                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-24_16-42-12 \
                                            --policy act
 
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
                                            --checkpoint /workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-08_15-14-40 \
                                            --policy diffusion
 """
+
+
+# TODO:
+
+# 1) Fare evaluation con fps != fps get_configs_dataset
 
 
 
@@ -45,7 +46,7 @@ def parse_args():
         help="Absolute path to the checkpoint folder")
     
     parser.add_argument("--policy", type=str, default="diffusion",
-                    choices=["diffusion", "act", "flow"],
+                    choices=["diffusion", "act", "flow", "act_mathis"],
                     help="Policy name")
     
     args = parser.parse_args()
@@ -84,8 +85,6 @@ def main():
     device = torch.device(dataloader_cfg["device"])
     N_history = model_cfg["params"].get("n_obs_steps") or model_cfg["params"].get("N_history")
     N_chunk = model_cfg["params"].get("horizon") or model_cfg["params"].get("chunk_size") or model_cfg["params"].get("N_chunk")
-    include_states = transforms_cfg["state"]["include"]
-    include_gripper = "gripper" in include_states
 
     # Consistency checks
     # if transforms_cfg["state"]["use_past_actions"] == True:
@@ -108,7 +107,6 @@ def main():
     # Load policy
     PolicyClass = get_policy_class(policy_name)
     policy = PolicyClass.from_pretrained(f"{checkpoint_path}/best_model.pt")
-    #policy.eval()
     policy.reset() # reset the policy to prepare for rollout
 
     # Create loaders
@@ -127,10 +125,10 @@ def main():
     for step, batch in enumerate(train_loader):
         
         # Move data to device
-        batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}      
+        batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}            
 
         # Save real action from dataset
-        real_action = batch["action"][:, 0, ...].to("cpu").numpy() # (B, D)
+        real_action = batch["action"][:, N_history, ...].to("cpu").numpy() # (B, D) 
         real_action_list.append(real_action.squeeze(0))  
 
         # Apply custom transforms
@@ -138,50 +136,40 @@ def main():
 
         # Convert (B,N_hist, D) in (B, D) by taking last timestep
         for k, v in batch.items():
-            if isinstance(v, torch.Tensor) and v.dim() >= 3:
+            if isinstance(v, torch.Tensor) and v.dim() >= 3: 
                 v = v[:, -1, ...].contiguous()
                 batch[k] = v
+
+        # print("transform", {k:v.shape for k,v in batch.items() if isinstance(v, torch.Tensor)})
 
         # Remove "action" from observations
         batch.pop("action")
 
         # # Inject noise in state to see divergence
         # std_noise = 0.1
-        # batch["observation.state"][:, :-1] += torch.randn_like(batch["observation.state"][:, :-1]) * std_noise
-
-        #print("eval", {k:v.shape for k,v in batch.items() if k != "task"})
-
-        batch = {"observation.state":batch["observation.state"], "observation.images.front_cam1":batch["observation.images.front_cam1"]}
-
-        #print("eval final", {k:v.shape for k,v in batch.items() if k != "task"})
-        #print(torch.linalg.norm(batch["observation.images.front_cam1"]))
+        # batch["observation.state"] += torch.randn_like(batch["observation.state"]) * std_noise
 
         # Inference
         with torch.inference_mode():
             action = policy.select_action(batch) # (B, D) --> (B, D)
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
-            print("step: ", step, policy.training)
+            print("step: ", step)
 
         # Move to CPU
         action = action.squeeze(0).to("cpu")
-        print(action, real_action)
 
         # Convert axis-angle to quaternion
-        quat = CustomTransforms.axis_angle2quaternion(action[3:6])
-
-        # Convert gripper in binary {0,1}
-        if (include_gripper):
-            action[-1] = CustomTransforms.gripper_continuous2discrete(action[-1])
+        if transforms_cfg["state"]["use_axis_angle"] == True:
+            quat = CustomTransforms.axis_angle2quaternion(action[3:6])
+        else:
+            quat = action[3:7]
 
         # Convert tensors to numpy
         action_np = action.numpy()
         quat_np = quat.numpy()
 
         # Build final action as expected by controller
-        if (include_gripper):
-            action_pre_tf = np.concatenate([action_np[:3], quat_np, [action_np[-1]]])
-        else:
-            action_pre_tf = np.concatenate([action_np[:3], quat_np])
+        action_pre_tf = np.concatenate([action_np[:3], quat_np, [action_np[-1]]])
 
         # Save estimated action from policy
         net_action_list.append(action_pre_tf)
@@ -205,9 +193,9 @@ def main():
     real_quat = real_actions[:, 3:7]
     pred_quat = pred_actions[:, 3:7]
 
-    if include_gripper:
-        real_gripper = real_actions[:, -1]
-        pred_gripper = pred_actions[:, -1]
+    real_gripper = real_actions[:, -1]
+    pred_gripper_cont = pred_actions[:, -1]
+    pred_gripper_disc = CustomTransforms.gripper_action_continuous2discrete(pred_gripper_cont) # convert gripper in binary {0,1}
 
     # Position error
     pos_error = pred_pos - real_pos
@@ -224,28 +212,28 @@ def main():
     print(f"Mean position error: {mean_pos_error:.4f} m")
     print(f"Mean orientation error: {mean_ori_error:.2f} deg")
 
-    if include_gripper:
-        accuracy = np.mean(pred_gripper == real_gripper)
-        print(f"Gripper accuracy: {accuracy*100:.2f} %")
+    accuracy = np.mean(pred_gripper_disc == real_gripper)
+    print(f"Gripper accuracy: {accuracy*100:.2f} %")
 
     t = np.arange(len(pos_error_norm))
 
-    # Plot XYZ
-    fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-    labels = ["x", "y", "z"]
+    # Plot pred vs real actions
+    num_dims = pred_actions.shape[1]
+    fig, axes = plt.subplots(num_dims, 1, figsize=(12, 2 * num_dims), sharex=True)
 
-    for i in range(3):
-        axs[i].plot(t, real_pos[:, i], label="Real")
-        axs[i].plot(t, pred_pos[:, i], "--", label="Pred")
-        axs[i].set_ylabel(f"{labels[i]} [m]")
-        axs[i].grid(True)
-        axs[i].legend()
+    for i in range(num_dims):
+        axes[i].plot(real_actions[:, i], label="Dataset (Ground Truth)", color="blue", linestyle="--", alpha=0.7)
+        axes[i].plot(pred_actions[:, i], label="Model (Prediction)", color="red", alpha=0.8)
+        axes[i].set_ylabel(f"Dim {i}")
+        axes[i].grid(True, alpha=0.3)
+        if i == 0:
+            axes[i].legend()
 
-    axs[-1].set_xlabel("Timestep")
-    fig.suptitle("End-effector position tracking")
+    axes[-1].set_xlabel("Timesteps")
+    plt.suptitle(f"Comparison Actions : Model vs Dataset\n")
     plt.tight_layout()
     plt.figtext(0.99, 0.01, f"Checkpoint: {checkpoint_name}", ha="right", va="bottom", fontsize=10, color="gray")
-    plt.savefig(os.path.join(img_dir, "xyz_tracking.jpeg"), format="jpeg", dpi=200)
+    plt.savefig(os.path.join(img_dir, "actions.jpeg"), format="jpeg", dpi=200)
     plt.show()
     plt.close()
 
@@ -279,21 +267,20 @@ def main():
     plt.close()
 
     # Plot gripper
-    if include_gripper:
-        plt.figure(figsize=(10, 3))
-        plt.step(t, real_gripper, where="post", label="Real", linewidth=2)
-        plt.step(t, pred_gripper, where="post", linestyle="--", label="Pred")
-        plt.ylabel("Gripper")
-        plt.xlabel("Timestep")
-        plt.yticks([0, 1])
-        plt.grid(True)
-        plt.legend(title=f"Accuracy: {accuracy*100:.2f}%")
-        plt.title("Gripper command tracking")
-        plt.tight_layout()
-        plt.figtext(0.99, 0.01, f"Checkpoint: {checkpoint_name}", ha="right", va="bottom", fontsize=10, color="gray")
-        plt.savefig(os.path.join(img_dir, "gripper_tracking.jpeg"), format="jpeg", dpi=200)
-        plt.show()
-        plt.close()
+    plt.figure(figsize=(10, 3))
+    plt.step(t, real_gripper, where="post", label="Real", linewidth=2)
+    plt.step(t, pred_gripper_disc, where="post", linestyle="--", label="Pred")
+    plt.ylabel("Gripper")
+    plt.xlabel("Timestep")
+    plt.yticks([0, 1])
+    plt.grid(True)
+    plt.legend(title=f"Accuracy: {accuracy*100:.2f}%")
+    plt.title("Gripper command tracking")
+    plt.tight_layout()
+    plt.figtext(0.99, 0.01, f"Checkpoint: {checkpoint_name}", ha="right", va="bottom", fontsize=10, color="gray")
+    plt.savefig(os.path.join(img_dir, "gripper_tracking.jpeg"), format="jpeg", dpi=200)
+    plt.show()
+    plt.close()
 
 
 

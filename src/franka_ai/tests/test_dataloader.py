@@ -18,7 +18,7 @@ python -m lerobot.scripts.visualize_dataset --repo-id lerobot/pusht --episode-in
 
 Visualize custom dataset saved locally:
 
-python -m lerobot.scripts.visualize_dataset --repo-id single_outliers --root /mnt/Data/datasets/lerobot/single_outliers --episode-index 0
+python -m lerobot.scripts.visualize_dataset --repo-id single_outliers --root /mnt/Data/datasets/lerobot/one_bag --episode-index 0
 """
 
 

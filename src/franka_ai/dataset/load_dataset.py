@@ -9,6 +9,14 @@ from franka_ai.dataset.utils import build_delta_timestamps, print_dataset_info, 
 from franka_ai.utils.seed_everything import make_worker_init_fn
 
 
+
+# TODO:
+
+# 1) Togliere episodio 0 
+
+
+
+
 def make_dataloader(
     repo_id=None, 
     dataset_path=None, 

@@ -7,7 +7,10 @@ def get_policy_class(policy_name):
         return DiffusionPolicy
     elif policy_name == "act":
         # from lerobot.common.policies.act.modeling_act import ACTPolicy
-        from franka_ai.models.actPatch.modeling_actpatch import ACTPolicyPatch
+        from franka_ai.models.actPatch.modeling_act_original import ACTPolicy
+        return ACTPolicy
+    elif policy_name == "act_mathis":
+        from franka_ai.models.actPatch.modeling_act_mathis import ACTPolicyPatch
         return ACTPolicyPatch
     elif policy_name == "flow":
         from franka_ai.models.flow.modeling_flow import FlowPolicy
@@ -22,7 +25,10 @@ def get_policy_config_class(policy_name):
         return DiffusionConfig
     elif policy_name == "act":
         # from lerobot.common.policies.act.configuration_act import ACTConfig
-        from franka_ai.models.actPatch.configuration_actpatch import ACTConfigPatch
+        from franka_ai.models.actPatch.configuration_act_original import ACTConfig
+        return ACTConfig
+    elif policy_name == "act_mathis":
+        from franka_ai.models.actPatch.configuration_act_mathis import ACTConfigPatch
         return ACTConfigPatch
     elif policy_name == "flow":
         from franka_ai.models.flow.configuration_flow import FlowConfig

@@ -4,8 +4,8 @@
 
 dataloader:
   
-  batch_size: 8
-  shuffle: False
+  batch_size: 16
+  shuffle: True
   train_split_ratio: 0.8
   val_split_ratio: 0.2
   num_workers: 4
@@ -62,7 +62,7 @@ dataset:
 transforms:
 
   visual:
-    img_resize: [120, 160]  
+    img_resize: [192, 144]  
     normalize: false
     augmentations:
       color_jitter:
@@ -85,13 +85,13 @@ transforms:
       noise_std_dev:
         joint_vel: 0.02       # σ ≈ rad/s
         joint_torque: 0.2     # σ ≈ Nm
-    use_axis_angle: True
+    use_axis_angle: False
     use_past_actions: False
     include: # define observation state components
     - q
     - qdot
     - tau
-    # - fext
+    - fext
     - ee_pos
     - ee_ori
     - gripper
