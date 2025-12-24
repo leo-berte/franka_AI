@@ -120,10 +120,6 @@ class ACTPolicy(PreTrainedPolicy):
         self.eval()
 
 
-        # # PATCH: remove time dimensions
-        # batch["observation.state"] = batch["observation.state"].squeeze(1)
-        # batch["observation.images.front_cam1"] = batch["observation.images.front_cam1"].squeeze(1)
-
 
         batch = self.normalize_inputs(batch)
         if self.config.image_features:
@@ -158,9 +154,15 @@ class ACTPolicy(PreTrainedPolicy):
     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, dict]:
         """Run the batch through the model and compute the loss for training or validation."""
 
-        # PATCH: remove time dimensions
+        # PATCH: remove time dimensions from state
         batch["observation.state"] = batch["observation.state"].squeeze(1)
-        # batch["observation.images.front_cam1"] = batch["observation.images.front_cam1"].squeeze(1)
+
+        # PATCH: remove time dimension from images
+        for k, v in batch.items():
+            if isinstance(v, torch.Tensor) and v.dim() == 5:  # (B, N_h, C, H, W)
+                batch[k] = v.squeeze(1)  # (B, C, H, W)
+
+
 
         batch = self.normalize_inputs(batch)
 
@@ -501,7 +503,6 @@ class ACT(nn.Module):
             latent_sample = torch.zeros([batch_size, self.config.latent_dim], dtype=torch.float32).to(
                 batch["observation.state"].device
             )
-            # latent_sample = torch.randn_like(latent_sample) # TEMP
 
         # Prepare transformer encoder inputs.
         encoder_in_tokens = [self.encoder_latent_input_proj(latent_sample)]
@@ -514,8 +515,6 @@ class ACT(nn.Module):
             encoder_in_tokens.append(
                 self.encoder_env_state_input_proj(batch["observation.environment_state"])
             )
-
-        # print("encodings state e latent: ", len(encoder_in_tokens), encoder_in_tokens[1].shape, encoder_in_tokens[1][0,:20]) 
 
         # Camera observation features and positional embeddings.
         if self.config.image_features:
@@ -535,10 +534,6 @@ class ACT(nn.Module):
                 all_cam_features.append(cam_features)
                 all_cam_pos_embeds.append(cam_pos_embed)
 
-            
-            # print("encodings images: ", len(all_cam_features), all_cam_features[0].shape, all_cam_features[0][0,0,:20]) 
-
-
             encoder_in_tokens.extend(torch.cat(all_cam_features, axis=0))
             encoder_in_pos_embed.extend(torch.cat(all_cam_pos_embeds, axis=0))
 
@@ -546,23 +541,15 @@ class ACT(nn.Module):
         encoder_in_tokens = torch.stack(encoder_in_tokens, axis=0)
         encoder_in_pos_embed = torch.stack(encoder_in_pos_embed, axis=0)
 
-
-
-        # print("encodings: ", encoder_in_tokens.shape, encoder_in_tokens[:5,0,:10])
-
-
         # Forward pass through the transformer modules.
         encoder_out = self.encoder(encoder_in_tokens, pos_embed=encoder_in_pos_embed)
-        # print("std over time encoder_out:", encoder_out.shape, encoder_out.std(dim=0).mean())
-        
+
         # TODO(rcadene, alexander-soare): remove call to `device` ; precompute and use buffer
         decoder_in = torch.zeros(
             (self.config.chunk_size, batch_size, self.config.dim_model),
             dtype=encoder_in_pos_embed.dtype,
             device=encoder_in_pos_embed.device,
         )
-        # decoder_in = torch.randn_like(decoder_in) # TEMP
-        # print("std over time decoder_in:", decoder_in.shape, decoder_in.std(dim=0).mean())
 
         decoder_out = self.decoder(
             decoder_in,
@@ -573,17 +560,8 @@ class ACT(nn.Module):
 
         # Move back to (B, S, C).
         decoder_out = decoder_out.transpose(0, 1)
-        # print("std over time decoder_out:", decoder_out.shape, decoder_out.std(dim=1).mean())
 
-        actions = self.action_head(decoder_out)
-        # print("std over time actions:", actions.shape, actions.std(dim=1).mean())
-
-
-
-        # print("batch actions: ", batch["action"].shape, batch["action"][0,:5,:])
-        # print("actions_hat: ", actions.shape, actions[0,:10,:])
-
-        
+        actions = self.action_head(decoder_out) 
 
         return actions, (mu, log_sigma_x2)
 

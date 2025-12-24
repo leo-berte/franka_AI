@@ -1,13 +1,12 @@
 import kornia.augmentation as K
+import numpy as np
 import torch
-
 
 
 # TODO: 
 
 
 # 1) add relative vs absolute cart pose as actions/state
-# 2) Todo: togliere immagini in bianco
 
 
 class CustomTransforms():
@@ -111,13 +110,24 @@ class CustomTransforms():
         return v + noise
 
     @staticmethod
-    def gripper_continuous2discrete(value, gripper_half_width=0.037):
+    def gripper_state_continuous2discrete(value, gripper_half_width=0.037):
 
         # input could be tensor or normal float
         if torch.is_tensor(value):
             return (value < gripper_half_width).float() # returns 0 (open) or 1 (close)
         else:
-            return float(value < gripper_half_width)    # returns 0 (open) or 1 (close)
+            return float(value < gripper_half_width)    
+        
+    @staticmethod
+    def gripper_action_continuous2discrete(value, gripper_half_width=0.5):
+
+        # input could be tensor, numpy array or normal float
+        if torch.is_tensor(value):
+            return (value > gripper_half_width).float() # returns 0 (open) or 1 (close)
+        elif isinstance(value, np.ndarray):
+            return (value > gripper_half_width).astype(np.float32)
+        else:
+            return float(value > gripper_half_width)    
 
     @staticmethod
     def quaternion2axis_angle(q):
@@ -163,8 +173,6 @@ class CustomTransforms():
         return quat_normalized
 
     def transform(self, sample):
-
-        return sample
 
         state_parts = []
         action_parts = []
@@ -216,7 +224,7 @@ class CustomTransforms():
                         part = self.quaternion2axis_angle(q_orientation) if self.use_axis_angle else q_orientation
                     elif state_name == "gripper": # convert to discrete gripper state (0.0 or 1.0)
                         gripper_cont = v[..., self.state_slices["gripper"]]
-                        part = self.gripper_continuous2discrete(gripper_cont) 
+                        part = self.gripper_state_continuous2discrete(gripper_cont) 
 
                     # add part to state vector
                     state_parts.append(part)
@@ -237,7 +245,7 @@ class CustomTransforms():
                         part = self.quaternion2axis_angle(q_orientation) if self.use_axis_angle else q_orientation
                     elif action_name == "gripper": # convert to discrete gripper state (0.0 or 1.0)
                         gripper_cont = v[..., self.action_slices["gripper"]]
-                        part = self.gripper_continuous2discrete(gripper_cont) 
+                        part = self.gripper_action_continuous2discrete(gripper_cont) 
 
                     # add part to state vector
                     action_parts.append(part)
@@ -250,6 +258,7 @@ class CustomTransforms():
                 future_actions = v_new[:, self.N_history:, :] # (B, N_c, D)
                 sample[k] = future_actions
 
+        # Manually remove extra length in "action_is_pad" created by LeRobot
         sample["action_is_pad"] = sample["action_is_pad"][:,self.N_history:]
 
         # append past actions to state if requested
@@ -263,6 +272,6 @@ class CustomTransforms():
         # drop unwanted features
         sample = {k: v for k, v in sample.items() if k not in self.skip_features}
 
-        #print("transform", {k:v.shape for k,v in sample.items() if k != "task"})
+        #print("transform", {k:v.shape for k,v in sample.items() if isinstance(v, torch.Tensor)})
 
         return sample

@@ -62,7 +62,7 @@ dataset:
 transforms:
 
   visual:
-    img_resize: [120, 160]  
+    img_resize: [192, 144]  
     normalize: false
     augmentations:
       color_jitter:

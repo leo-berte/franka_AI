@@ -29,9 +29,6 @@ from franka_ai.models.actPatch.configuration_act_mathis import ACTConfigPatch
 Run the code: 
 
 python src/franka_ai/training/train_mathis.py --algorithm act
-
-
-
 """
 
 
@@ -68,6 +65,21 @@ class Args:
 
 
 # --- Fonctions Utilitaires ---
+
+def print_dataset_info(ds, ds_type):
+    
+    print(f"Info about {ds_type}:")
+    print(f"Number of total frames: {ds.meta.total_frames}")
+    print(f"Number of selected frames: {ds.num_frames}")
+    print(f"Number of total episodes: {ds.meta.total_episodes}")
+    print(f"Number of selected episodes: {ds.num_episodes}")
+    print(f"Number of fps: {ds.fps}")
+    features = features = dataset_to_policy_features(ds.features)
+    output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
+    input_features = {key: ft for key, ft in features.items() if key not in output_features}
+    print("Output features: \n", output_features)
+    print("Input features: \n", input_features)
+    print("\n")
 
 def split_train_val(arr: np.ndarray, val_percentage: float) -> tuple[List[int], List[int]]:
     """Divise les indices d'épisodes en ensembles d'entraînement et de validation."""
@@ -183,8 +195,11 @@ def main():
     features = dataset_to_policy_features(dataset_metadata.features)
     output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
     input_features = {key: ft for key, ft in features.items() if key in ["observation.state", "observation.images.front_cam1"]} #if ((key not in output_features) and ("gripper_cam" not in key))}
-
-    print(input_features)
+    print("New output_features: ", output_features)
+    print("New input_features: ", input_features)
+    
+    print(train_episodes)
+    print(val_episodes)
     
     cfg = None
     horizon = 0
@@ -216,6 +231,9 @@ def main():
     for output_key in output_features.keys():
         delta_timestamps[output_key] = [i / dataset_metadata.fps for i in range(horizon)]
 
+    for k,v in delta_timestamps.items():
+        print(k,v)
+
     # # --- 4. Chargement des Données et DataLoaders ---
     # # Gérer la logique MultiLeRobotDataset si plusieurs datasets, mais pour l'instant, on se concentre sur un seul dataset.
     # train_episodes_list = train_episodes[args.names_dataset[0]]
@@ -224,8 +242,9 @@ def main():
     #dataset = LeRobotDatasetPatch("", root=f"./datasets/{args.names_dataset[0]}", delta_timestamps=delta_timestamps, episodes=train_episodes_list, tolerance_s=1000)
     #valset = LeRobotDatasetPatch("", root=f"./datasets/{args.names_dataset[0]}", delta_timestamps=delta_timestamps, episodes=val_episodes_list, tolerance_s=1000)
 
-    dataset = MultiLeRobotDatasetPatch(args.names_dataset, root=f"{dataset_path_root}", delta_timestamps=delta_timestamps, episodes=train_episodes, tolerances_s={name:1000 for name in train_episodes.keys()})
-
+    # dataset = MultiLeRobotDatasetPatch(args.names_dataset, root=f"{dataset_path_root}", delta_timestamps=delta_timestamps, episodes=train_episodes, tolerances_s={name:1000 for name in train_episodes.keys()})
+    dataset = LeRobotDatasetPatch(repo_id="", root=f"{dataset_path_root}/{args.names_dataset[0]}", delta_timestamps=delta_timestamps, episodes=train_episodes["single_outliers"])
+    
     empty_val = False
     for key in val_episodes.keys():
         if len(val_episodes[key]) == 0:
@@ -233,7 +252,15 @@ def main():
             break
 
     if empty_val == False:
-        valset = MultiLeRobotDatasetPatch(args.names_dataset, root=f"{dataset_path_root}", delta_timestamps=delta_timestamps, episodes=val_episodes, tolerances_s={name:1000 for name in train_episodes.keys()})
+        # valset = MultiLeRobotDatasetPatch(args.names_dataset, root=f"{dataset_path_root}", delta_timestamps=delta_timestamps, episodes=val_episodes, tolerances_s={name:1000 for name in train_episodes.keys()})
+        valset = LeRobotDatasetPatch(repo_id="", root=f"{dataset_path_root}/{args.names_dataset[0]}", delta_timestamps=delta_timestamps, episodes=val_episodes["single_outliers"])
+
+
+
+    print_dataset_info(dataset, "dataset")
+    print_dataset_info(valset, "valset")
+
+
 
     dataloader = DataLoader(
         dataset,
@@ -289,26 +316,35 @@ def main():
         best_val_loss = np.inf
         epoch, epoch_since_best = 0, 0
         done = False
+        total_loss_train_period = 0.0
         
         while not done:
-            total_loss_train_period = 0.0
+            
             
             for batch in dataloader:
                 
                 # --- Étape d'entraînement ---
                 batch = prepare_batch(batch, device)
 
+                # print(batch["action"].shape) # B, N_c, D
+                # print(batch["observation.state"].shape) # B, N_h, D
+                # print(batch["observation.images.front_cam1"].shape) # B, 3, H, W
+
                 #print({k:v.shape for k,v in batch.items() if k != "task"})
 
                 loss, _ = policy.forward(batch)
+                print(loss.item())
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
                 total_loss_train_period += loss.item()
+
                 
                 # --- Logging et Évaluation Périodique (en steps) ---
-                if (step + 1) % args.step_log_freq == 0:
+                if (step) % args.step_log_freq == 0:
                     
+                    print(step, total_loss_train_period, args.step_log_freq)
+
                     # 1. Calcul des pertes
                     avg_train_loss = total_loss_train_period / args.step_log_freq
                     val_loss = evaluate(policy, valloader, device)

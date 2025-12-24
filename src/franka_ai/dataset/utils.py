@@ -13,8 +13,6 @@ from lerobot.configs.types import FeatureType
 
 # TODO: 
 # 1) Do I want images close to each others or far in time? 
-# 2) rimettere: full_actions = action_history + chunk
-
 
 # -------
 # PATCHES
@@ -132,8 +130,7 @@ def build_delta_timestamps(feature_groups, N_h, N_c, fps_dataset, fps_sampling_h
     chunk   = [(i * step_chunk * dt_dataset) for i in range(0, N_c)]
 
     # Combine history + chunk to potentially extrapolate also past actions
-    # full_actions = action_history + chunk
-    full_actions = chunk
+    full_actions = action_history + chunk
 
     # create dict
     delta_timestamps = {}

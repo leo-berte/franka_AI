@@ -48,8 +48,12 @@ def prepare_batch(batch: dict, device: torch.device) -> dict:
 def main():
     # --- 1. Configuration ---
     # Remplacez par le chemin de votre modèle sauvegardé
-    # model_path = "./outputs/checkpoints/single_outliers_act_2025-12-18_16-45-49/best_model.pt"
-    model_path = "./outputs/train/single_outliers1__act_10_50_best_adamw" 
+    # model_path = "./outputs/checkpoints/single_outliers_act_mathis_2025-12-23_20-07-25/best_model.pt"  # good with adamW 
+    # model_path = "./outputs/checkpoints/single_outliers_act_mathis_2025-12-24_09-22-01/best_model.pt" # scheduler 500 steps
+    # model_path = "./outputs/checkpoints/single_outliers_act_mathis_2025-12-24_09-54-45/best_model.pt" # scheduler 150 steps
+    model_path = "./outputs/checkpoints/single_outliers_act_mathis_2025-12-24_10-17-08/best_model.pt" # no scheduler, time ON, gradclip ON
+    # model_path = "./outputs/checkpoints/single_outliers_act_mathis_2025-12-24_11-01-06/best_model.pt" # rotto --> trasnform con crop image ON, sche OFF
+    # model_path = "./outputs/train/single_outliers1__act_10_50_best" 
     dataset_path = f"/mnt/Data/datasets/lerobot/single_outliers"
 
     # dataset_name = "single_outliers"
@@ -77,6 +81,10 @@ def main():
     }
     for output_key in cfg.output_features.keys():
         delta_timestamps[output_key] = [i / dataset_metadata.fps for i in range(cfg.chunk_size)]
+
+    # debug
+    for k, v in delta_timestamps.items():
+        print(k, v)
     
     test_dataset = LeRobotDatasetPatch(
         repo_id=None,

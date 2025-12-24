@@ -42,6 +42,7 @@ http://localhost:6006/#timeseries
 
 # TODO:
 
+
 # 1) Handle correctly pre-training (i.e. I add Fext in input features for example)
 # 2) Optimize training (see notes
 
@@ -57,7 +58,7 @@ def parse_args():
                         help="Absolute path to pretrained checkpoint")
 
     parser.add_argument("--policy", type=str, required=True,
-                        choices=["diffusion", "act", "flow"],
+                        choices=["diffusion", "act", "act_mathis", "flow"],
                         help="Policy name")
     
     parser.add_argument("--config", type=str, default="config",
@@ -119,17 +120,17 @@ def train():
         raise ValueError("save_ckpt_freq must be >= eval_freq and a multiple of it")
     if training_steps % save_ckpt_freq != 0:
         raise ValueError("training_steps must be a multiple of save_ckpt_freq to ensure final evaluation alignment")
-    
+
     # Eventually freeze seed for reproducibility
     if seed_val is not None and seed_val >= 0:
         seed_everything(seed_val)
 
     # Prepare transforms for training, inference and for computing dataset stats
-    transforms_train = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=True) 
+    transforms_train = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=False) 
     transforms_val = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=False)
 
     # Create loaders
-    train_loader, train_ep, val_loader, val_ep, new_dataset_stats = make_dataloader(
+    train_loader, train_ep, val_loader, val_ep = make_dataloader(
         dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
@@ -139,7 +140,7 @@ def train():
     # ---------------------
     # POLICY INITIALIZATION
     # ---------------------
-
+    
     if pretrained_path:
 
         # Load from checkpoint
@@ -148,7 +149,7 @@ def train():
         print(f"Loaded pretrained policy from {pretrained_path}")
 
     else:
-
+    
         # Get dataset input/output stats
         features = dataset_to_policy_features_patch(train_loader, dataset_cfg["features"], transforms_train)
         output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
@@ -158,7 +159,7 @@ def train():
         
         # Define normalization and unnormalization mode 
         normalization_mapping = parse_normalization_mapping(normalization_cfg)
-
+        
         # Get policy configuration class
         ConfigClass = get_policy_config_class(policy_name)
 
@@ -168,32 +169,16 @@ def train():
             normalization_mapping=normalization_mapping,
             **models_cfg[policy_name]["params"]
         )
-                            
+
         # Get episodes stats
         episode_stats_path = Path(f"configs/{config_folder}") / "episodes_stats_transformed.jsonl"
         episodes_stats = load_episodes_stats_patch(episode_stats_path)
         # Aggregate episodes stats in a unique global stats
-        # new_dataset_stats = aggregate_stats([episodes_stats[ep] for ep in train_ep])
+        new_dataset_stats = aggregate_stats([episodes_stats[ep] for ep in train_ep])
         # Save transformed stats in checkpoint dir as backup
         dst_path = Path(checkpoints_dir) / "episodes_stats_transformed.jsonl"
         shutil.copy(episode_stats_path, dst_path)
-
-
-
-        # # TEMP
-        # dataset_with_original_stats = LeRobotDatasetPatch(
-        #     repo_id=None,
-        #     root=dataset_path,   
-        #     episodes=[0]
-        # )
-
-        # new_dataset_stats = train_loader.stats
-
-
-
-
-
-
+        
         # Setup policy
         policy = make_policy(policy_name, cfg, dataset_stats=new_dataset_stats)
 
@@ -202,14 +187,12 @@ def train():
     policy.to(device)
 
     # Optimizer
-    # optimizer = torch.optim.AdamW(policy.parameters(), lr=learning_rate, betas=(0.9, 0.999), weight_decay=weight_decay)
-    optimizer = torch.optim.Adam(policy.parameters(), lr=learning_rate, weight_decay=weight_decay)
-
+    optimizer = torch.optim.AdamW(policy.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     # Linear LR scheduler for warmup (from start_factor*lr to lr)
-    warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=lr_warmup_steps)
+    warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=lr_warmup_steps)
     # Cosine LR scheduler after warmup (from lr to eta_min)
-    cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=training_steps - lr_warmup_steps, eta_min=learning_rate * 0.1)
+    cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=training_steps - lr_warmup_steps, eta_min=learning_rate * 0.5)
     # Sequential LR scheduler
     scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[lr_warmup_steps])
 
@@ -232,7 +215,9 @@ def train():
     while not done:
 
         for batch in train_loader:
-            
+
+            # print("transform", {k:v.shape for k,v in batch.items() if isinstance(v, torch.Tensor)})
+        
             # Sart timer
             if device.type == "cuda":
                 torch.cuda.synchronize()
@@ -244,40 +229,19 @@ def train():
             # Apply custom transforms
             batch = transforms_train.transform(batch) # in/out: (B, N_h, ...)
 
-            # TEMP
-            # batch.pop("action")
-            # batch["observation.images.front_cam1"] = torch.zeros_like(batch["observation.images.front_cam1"])
-            B = batch["observation.images.front_cam1"].shape[0]
-            device = batch["observation.images.front_cam1"].device
-            dtype = batch["observation.images.front_cam1"].dtype
-
-            batch["observation.images.front_cam1"] = torch.zeros(
-                (B, 3, 192, 144),
-                device=device,
-                dtype=dtype,
-            )
-            
-            batch.pop("observation.images.front_cam2")
-            batch.pop("observation.images.front_cam3")
-            batch.pop("observation.images.gripper_camera")
-            batch.pop("observation.images.gripper_camera_depth")
-
-
-            # observation.images.front_cam1 torch.Size([8, 3, 480, 640])
-            # observation.state torch.Size([8, 1, 35])
-            # action torch.Size([8, 50, 8])
-
+            # print("transform", {k:v.shape for k,v in batch.items() if isinstance(v, torch.Tensor)})
 
             # Computes the loss (and optionally predictions)
             loss, _ = policy.forward(batch)
+            print(loss.item())
 
             loss.backward() # compute gradients
-            total_norm = 1.0 # clip_grad_norm_(policy.parameters(), max_norm=1.0) # measure gradients norm and clip it
+            total_norm = clip_grad_norm_(policy.parameters(), max_norm=1.0) # measure gradients norm and clip it
             running_grad_norm_sum += total_norm
             optimizer.step() # do gradient step
-            # scheduler.step()
+            scheduler.step()
             optimizer.zero_grad()
-            
+
             # Stop and store timer
             if device.type == "cuda":
                 torch.cuda.synchronize()
@@ -311,12 +275,14 @@ def train():
                 # Run evaluation on validation set
                 policy.eval()
                 val_loss_total = 0.0
+
                 with torch.no_grad():
                     for val_batch in val_loader:
                         val_batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in val_batch.items()}
                         val_batch = transforms_val.transform(val_batch) 
                         val_loss, _ = policy.forward(val_batch)
                         val_loss_total += val_loss.item()
+                
                 avg_val_loss = val_loss_total / len(val_loader)
                 val_losses.append(avg_val_loss)
                 val_steps.append(step)

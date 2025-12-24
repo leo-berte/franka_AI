@@ -157,6 +157,12 @@ class ACTPolicyPatch(PreTrainedPolicy):
 
     def forward(self, batch):
         """Run the batch through the model and compute the loss for training or validation."""
+        
+        # PATCH: remove time dimension from images
+        for k, v in batch.items():
+            if isinstance(v, torch.Tensor) and v.dim() == 5:  # (B, N_h, C, H, W)
+                batch[k] = v.squeeze(1)  # (B, C, H, W)
+        
         batch = self.normalize_inputs(batch)
         if self.config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
