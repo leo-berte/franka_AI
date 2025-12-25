@@ -17,7 +17,7 @@ act:
 
   params:
     n_obs_steps: 1
-    chunk_size: 50   
+    chunk_size: 100   
     n_action_steps: 25
 
   sampling:

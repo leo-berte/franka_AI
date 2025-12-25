@@ -119,8 +119,6 @@ class ACTPolicy(PreTrainedPolicy):
         """
         self.eval()
 
-
-
         batch = self.normalize_inputs(batch)
         if self.config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
@@ -133,10 +131,6 @@ class ACTPolicy(PreTrainedPolicy):
             actions = self.unnormalize_outputs({"action": actions})["action"]
             action = self.temporal_ensembler.update(actions)
             return action
-
-
-
-
 
         # Action queue logic for n_action_steps > 1. When the action_queue is depleted, populate it by
         # querying the policy.
@@ -162,28 +156,11 @@ class ACTPolicy(PreTrainedPolicy):
             if isinstance(v, torch.Tensor) and v.dim() == 5:  # (B, N_h, C, H, W)
                 batch[k] = v.squeeze(1)  # (B, C, H, W)
 
-
-
         batch = self.normalize_inputs(batch)
 
         if self.config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
             batch["observation.images"] = [batch[key] for key in self.config.image_features]
-
-        # # batch compositions without PATCH
-        # observation.images.front_cam1 torch.Size([8, 1, 3, 120, 160])
-        # observation.state torch.Size([8, 1, 7])
-        # action torch.Size([8, 50, 6])
-        # timestamp torch.Size([8])
-        # frame_index torch.Size([8])
-        # episode_index torch.Size([8])
-        # index torch.Size([8])
-        # task_index torch.Size([8])
-        # observation.images.front_cam1_is_pad torch.Size([8, 1])
-        # observation.state_is_pad torch.Size([8, 1])
-        # action_is_pad torch.Size([8, 50])
-        # task <class 'list'>
-        # observation.images <class 'list'>
 
         batch = self.normalize_targets(batch)
         actions_hat, (mu_hat, log_sigma_x2_hat) = self.model(batch)

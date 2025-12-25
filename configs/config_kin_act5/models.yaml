@@ -10,32 +10,19 @@ diffusion:
     n_action_steps: 8
 
   sampling:
-    fps_sampling_hist: 10
-    fps_sampling_chunk: 10
-
+    fps_sampling_hist: 30
+    fps_sampling_chunk: 30
 
 act:
 
   params:
     n_obs_steps: 1
     chunk_size: 50   
-    n_action_steps: 50
+    n_action_steps: 25
 
   sampling:
-    fps_sampling_hist: 30
-    fps_sampling_chunk: 30
-
-
-act_mathis:
-
-  params:
-    n_obs_steps: 1
-    chunk_size: 50   
-    n_action_steps: 50
-
-  sampling:
-    fps_sampling_hist: 30
-    fps_sampling_chunk: 30
+    fps_sampling_hist: 10
+    fps_sampling_chunk: 10
 
 
 my_policy:

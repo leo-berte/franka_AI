@@ -15,18 +15,20 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-24_16-42-12 \
+                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-25_15-52-44 \
                                            --policy act
 
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
-                                           --checkpoint /workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-08_15-14-40 \
+                                           --checkpoint /workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-24_21-15-57 \
                                            --policy diffusion
 """
 
 
 # TODO:
 
-# 1) Fare evaluation con fps != fps get_configs_dataset
+# prova a plottare axis angle su axis angle
+# 1) Fare evaluation con fps != fps get_configs_dataset 
+# 2) abilita inlcude_past_actions
 
 
 
@@ -161,6 +163,7 @@ def main():
         # Convert axis-angle to quaternion
         if transforms_cfg["state"]["use_axis_angle"] == True:
             quat = CustomTransforms.axis_angle2quaternion(action[3:6])
+            print(action[3:6], quat)
         else:
             quat = action[3:7]
 

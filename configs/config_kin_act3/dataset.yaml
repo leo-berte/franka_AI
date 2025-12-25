@@ -62,7 +62,7 @@ dataset:
 transforms:
 
   visual:
-    img_resize: [192, 144]  
+    img_resize: [120, 160] 
     normalize: false
     augmentations:
       color_jitter:
@@ -85,13 +85,13 @@ transforms:
       noise_std_dev:
         joint_vel: 0.02       # σ ≈ rad/s
         joint_torque: 0.2     # σ ≈ Nm
-    use_axis_angle: False
+    use_axis_angle: False 
     use_past_actions: False
     include: # define observation state components
     - q
     - qdot
-    - tau
-    - fext
+    # - tau
+    # - fext
     - ee_pos
     - ee_ori
     - gripper

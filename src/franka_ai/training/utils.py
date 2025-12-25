@@ -22,9 +22,9 @@ def get_configs_training(config_rel_path):
         cfg = yaml.safe_load(f)
 
     train_cfg = cfg["training"]
-    normalization_cfg = cfg["normalization_mapping"]
+    policies_cfg = cfg["policies"]
 
-    return train_cfg, normalization_cfg
+    return train_cfg, policies_cfg
     
 def set_output_folders_train(policy_type, dataset_path, config_folder):
 

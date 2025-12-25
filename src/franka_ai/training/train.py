@@ -24,12 +24,12 @@ from franka_ai.models.factory import get_policy_config_class, make_policy, get_p
 Run the code: 
 
 python src/franka_ai/training/train.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                       --config config1 \
-                                       --policy diffusion \
+                                       --config config_kin_act1 \
+                                       --policy act \
                                        --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints/.....
 
 python src/franka_ai/training/train.py --dataset /workspace/data/single_outliers \
-                                       --config config1 \
+                                       --config config_full_state \
                                        --policy diffusion \
                                        --pretrained /workspace/outputs/checkpoints/....
 
@@ -41,6 +41,10 @@ http://localhost:6006/#timeseries
 
 
 # TODO:
+
+# remove train/eval mathis + remove act_mathis + new branch develop + mathis
+
+# 1) kinematics test on ONE BAG: act e diffusion con fps = 10, 30 e torques, fext, velocitiies ON/OFF with images ALL white
 
 
 # 1) Handle correctly pre-training (i.e. I add Fext in input features for example)
@@ -90,8 +94,9 @@ def train():
 
     # Load configs
     dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(f"configs/{config_folder}/dataset.yaml")
-    train_cfg, normalization_cfg = get_configs_training(f"configs/{config_folder}/train.yaml")
+    train_cfg, policies_cfg = get_configs_training(f"configs/{config_folder}/train.yaml")
     models_cfg = get_configs_models(f"configs/{config_folder}/models.yaml")
+    policy_cfg = policies_cfg[policy_name]
 
     # Get folders to save weights and tensorboard logs
     checkpoints_dir, tensorboard_dir, tsbrd_writer = set_output_folders_train(policy_name, dataset_path, config_folder)
@@ -109,9 +114,9 @@ def train():
     log_freq        = train_cfg["log_freq"]          # logs train loss, gradNorm, lr
     eval_freq       = train_cfg["eval_freq"]         # logs eval loss
     save_ckpt_freq  = train_cfg["save_ckpt_freq"]    # save checkpoints
-    learning_rate   = train_cfg["learning_rate"] 
-    lr_warmup_steps = train_cfg["lr_warmup_steps"]
-    weight_decay    = train_cfg["weight_decay"]
+    learning_rate   = policy_cfg["optimizer"]["learning_rate"] 
+    weight_decay    = policy_cfg["optimizer"]["weight_decay"]
+    lr_warmup_steps = policy_cfg["scheduler"]["lr_warmup_steps"]
 
     # Consistency checks
     if eval_freq % log_freq != 0:
@@ -126,7 +131,7 @@ def train():
         seed_everything(seed_val)
 
     # Prepare transforms for training, inference and for computing dataset stats
-    transforms_train = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=False) 
+    transforms_train = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=True)
     transforms_val = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=False)
 
     # Create loaders
@@ -158,7 +163,7 @@ def train():
         print("New input_features: ", input_features)
         
         # Define normalization and unnormalization mode 
-        normalization_mapping = parse_normalization_mapping(normalization_cfg)
+        normalization_mapping = parse_normalization_mapping(policy_cfg["normalization"])
         
         # Get policy configuration class
         ConfigClass = get_policy_config_class(policy_name)
