@@ -15,8 +15,12 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-25_15-52-44 \
+                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-26_04-29-42 \
                                            --policy act
+
+python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
+                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-26_10-06-38_axis_angle_plots \
+                                           --policy act 
 
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
                                            --checkpoint /workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-24_21-15-57 \
@@ -24,9 +28,8 @@ python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outl
 """
 
 
-# TODO:
 
-# prova a plottare axis angle su axis angle
+# TODO:
 # 1) Fare evaluation con fps != fps get_configs_dataset 
 # 2) abilita inlcude_past_actions
 
@@ -48,7 +51,7 @@ def parse_args():
         help="Absolute path to the checkpoint folder")
     
     parser.add_argument("--policy", type=str, default="diffusion",
-                    choices=["diffusion", "act", "flow", "act_mathis"],
+                    choices=["diffusion", "act", "flow"],
                     help="Policy name")
     
     args = parser.parse_args()
@@ -56,11 +59,32 @@ def parse_args():
     # return args
     return args.dataset, args.checkpoint, args.policy
 
+def align_quat(q_pred, q_ref):
+
+    if torch.dot(q_pred, q_ref) < 0:
+        return -q_pred
+    return q_pred
+
+def normalize_quat(q):
+
+    """    
+    q: array-like (..., 4) [x, y, z, w]
+    ritorna: array numpy normalized
+    """
+
+    norm = torch.linalg.norm(q, axis=-1, keepdims=True) + 1e-8
+    q_normalized = q / norm
+
+    return q_normalized
+
+
 def quat_angle_error(q1, q2):
+
     """
     q1, q2: (..., 4) quaternion [x,y,z,w]
     ritorna errore angolare in radianti
     """
+
     q1 = q1 / np.linalg.norm(q1, axis=-1, keepdims=True)
     q2 = q2 / np.linalg.norm(q2, axis=-1, keepdims=True)
 
@@ -68,6 +92,7 @@ def quat_angle_error(q1, q2):
     dot = np.clip(np.abs(dot), -1.0, 1.0)
 
     return 2 * np.arccos(dot)
+
 
 def main():
 
@@ -163,9 +188,10 @@ def main():
         # Convert axis-angle to quaternion
         if transforms_cfg["state"]["use_axis_angle"] == True:
             quat = CustomTransforms.axis_angle2quaternion(action[3:6])
-            print(action[3:6], quat)
+            quat = align_quat(quat, torch.tensor(real_action_list[-1][3:7]))
         else:
             quat = action[3:7]
+            quat = normalize_quat(quat)
 
         # Convert tensors to numpy
         action_np = action.numpy()
@@ -194,7 +220,7 @@ def main():
     pred_pos = pred_actions[:, :3]
 
     real_quat = real_actions[:, 3:7]
-    pred_quat = pred_actions[:, 3:7]
+    pred_quat = pred_actions[:, 3:7]   
 
     real_gripper = real_actions[:, -1]
     pred_gripper_cont = pred_actions[:, -1]
@@ -221,7 +247,7 @@ def main():
     t = np.arange(len(pos_error_norm))
 
     # Plot pred vs real actions
-    num_dims = pred_actions.shape[1]
+    num_dims = real_actions.shape[1]
     fig, axes = plt.subplots(num_dims, 1, figsize=(12, 2 * num_dims), sharex=True)
 
     for i in range(num_dims):

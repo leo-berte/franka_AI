@@ -24,7 +24,7 @@ from franka_ai.models.factory import get_policy_config_class, make_policy, get_p
 Run the code: 
 
 python src/franka_ai/training/train.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                       --config config_kin_act1 \
+                                       --config config_test_aa \
                                        --policy act \
                                        --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints/.....
 
@@ -42,10 +42,6 @@ http://localhost:6006/#timeseries
 
 # TODO:
 
-# remove train/eval mathis + remove act_mathis + new branch develop + mathis
-
-# 1) kinematics test on ONE BAG: act e diffusion con fps = 10, 30 e torques, fext, velocitiies ON/OFF with images ALL white
-
 
 # 1) Handle correctly pre-training (i.e. I add Fext in input features for example)
 # 2) Optimize training (see notes
@@ -62,7 +58,7 @@ def parse_args():
                         help="Absolute path to pretrained checkpoint")
 
     parser.add_argument("--policy", type=str, required=True,
-                        choices=["diffusion", "act", "act_mathis", "flow"],
+                        choices=["diffusion", "act", "flow"],
                         help="Policy name")
     
     parser.add_argument("--config", type=str, default="config",
@@ -238,7 +234,7 @@ def train():
 
             # Computes the loss (and optionally predictions)
             loss, _ = policy.forward(batch)
-            print(loss.item())
+            # print(loss.item())
 
             loss.backward() # compute gradients
             total_norm = clip_grad_norm_(policy.parameters(), max_norm=1.0) # measure gradients norm and clip it

@@ -3,8 +3,13 @@ import numpy as np
 import torch
 
 
-# TODO: 
 
+# NOTE:
+# I can plot quat pred Vs quat real && aa pred Vs aa real super precisely.. 
+# but when I do aa_pred --> q pred Vs q real the plot has lots of spikes
+# Check test_orientations.py
+
+# TODO: 
 
 # 1) add relative vs absolute cart pose as actions/state
 

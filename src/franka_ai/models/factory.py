@@ -8,9 +8,6 @@ def get_policy_class(policy_name):
     elif policy_name == "act":
         from franka_ai.models.actPatch.modeling_act_original import ACTPolicy
         return ACTPolicy
-    elif policy_name == "act_mathis":
-        from franka_ai.models.actPatch.modeling_act_mathis import ACTPolicyPatch
-        return ACTPolicyPatch
     elif policy_name == "flow":
         from franka_ai.models.flow.modeling_flow import FlowPolicy
         return FlowPolicy
@@ -25,9 +22,6 @@ def get_policy_config_class(policy_name):
     elif policy_name == "act":
         from franka_ai.models.actPatch.configuration_act_original import ACTConfig
         return ACTConfig
-    elif policy_name == "act_mathis":
-        from franka_ai.models.actPatch.configuration_act_mathis import ACTConfigPatch
-        return ACTConfigPatch
     elif policy_name == "flow":
         from franka_ai.models.flow.configuration_flow import FlowConfig
         return FlowConfig
