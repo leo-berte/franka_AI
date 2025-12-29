@@ -24,9 +24,9 @@ from franka_ai.models.factory import get_policy_config_class, make_policy, get_p
 Run the code: 
 
 python src/franka_ai/training/train.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                       --config config_test_aa \
+                                       --config config_kin_act1 \
                                        --policy act \
-                                       --pretrained /home/leonardo/Documents/Coding/franka_AI/outputs/checkpoints/.....
+                                       --pretrained outputs/checkpoints/kinematics_tests/single_outliers_act_2025-12-25_21-08-42/best_model.pt
 
 python src/franka_ai/training/train.py --dataset /workspace/data/single_outliers \
                                        --config config_full_state \
@@ -42,8 +42,7 @@ http://localhost:6006/#timeseries
 
 # TODO:
 
-
-# 1) Handle correctly pre-training (i.e. I add Fext in input features for example)
+# 1) Check pre-training feature (i.e. When I add Fext in input features for example)
 # 2) Optimize training (see notes
 
  
@@ -234,7 +233,7 @@ def train():
 
             # Computes the loss (and optionally predictions)
             loss, _ = policy.forward(batch)
-            # print(loss.item())
+            print(loss.item())
 
             loss.backward() # compute gradients
             total_norm = clip_grad_norm_(policy.parameters(), max_norm=1.0) # measure gradients norm and clip it

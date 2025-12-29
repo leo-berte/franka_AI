@@ -6,23 +6,23 @@ diffusion:
 
   params:
     n_obs_steps: 5
-    horizon: 16    
-    n_action_steps: 8
+    horizon: 8    
+    n_action_steps: 4
 
   sampling:
-    fps_sampling_hist: 30
-    fps_sampling_chunk: 30
+    fps_sampling_hist: 10
+    fps_sampling_chunk: 10
 
 act:
 
   params:
     n_obs_steps: 1
-    chunk_size: 16   
-    n_action_steps: 8
+    chunk_size: 50   
+    n_action_steps: 25
 
   sampling:
-    fps_sampling_hist: 10
-    fps_sampling_chunk: 10
+    fps_sampling_hist: 30
+    fps_sampling_chunk: 30
 
 
 my_policy:

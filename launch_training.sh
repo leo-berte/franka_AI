@@ -5,37 +5,37 @@
 DATA=/mnt/Data/datasets/lerobot/single_outliers
 # DATA=/workspace/data/single_outliers
 
-POLICY=act
+POLICY=diffusion
 
-python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act1 &
+python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_diffusion_test &
 wait
-python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act1 --policy $POLICY &
-wait
-
-python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act2 &
-wait
-python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act2 --policy $POLICY &
+python src/franka_ai/training/train.py --dataset $DATA --config config_kin_diffusion_test --policy $POLICY &
 wait
 
-python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act3 &
-wait
-python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act3 --policy $POLICY &
-wait
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act2 &
+# wait
+# python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act2 --policy $POLICY &
+# wait
 
-python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act4 &
-wait
-python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act4 --policy $POLICY &
-wait
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act3 &
+# wait
+# python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act3 --policy $POLICY &
+# wait
 
-python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act5 &
-wait
-python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act5 --policy $POLICY &
-wait
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act4 &
+# wait
+# python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act4 --policy $POLICY &
+# wait
 
-python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act6 &
-wait
-python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act6 --policy $POLICY &
-wait
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act5 &
+# wait
+# python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act5 --policy $POLICY &
+# wait
+
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act6 &
+# wait
+# python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act6 --policy $POLICY &
+# wait
 
 
 

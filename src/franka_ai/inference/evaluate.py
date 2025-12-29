@@ -1,8 +1,11 @@
 import argparse
 import torch
 import numpy as np
+from collections import deque
 import matplotlib.pyplot as plt
 import os
+
+from lerobot.common.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.load_dataset import make_dataloader
@@ -15,24 +18,13 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-26_04-29-42 \
+                                           --checkpoint outputs/checkpoints/single_outliers_diffusion_2025-12-29_12-02-02 \
                                            --policy act
-
-python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-26_10-06-38_axis_angle_plots \
-                                           --policy act 
 
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
                                            --checkpoint /workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-24_21-15-57 \
                                            --policy diffusion
 """
-
-
-
-# TODO:
-# 1) Fare evaluation con fps != fps get_configs_dataset 
-# 2) abilita inlcude_past_actions
-
 
 
 def parse_args():
@@ -77,7 +69,6 @@ def normalize_quat(q):
 
     return q_normalized
 
-
 def quat_angle_error(q1, q2):
 
     """
@@ -92,6 +83,31 @@ def quat_angle_error(q1, q2):
     dot = np.clip(np.abs(dot), -1.0, 1.0)
 
     return 2 * np.arccos(dot)
+
+def init_action_buffer(loader, N_history):
+    
+    # get batch
+    batch = next(iter(loader))
+
+    # init action buffer
+    action_buffer = deque(maxlen=N_history)
+    
+    for _ in range(N_history):
+        action_buffer.append(batch["action"][0, 0].numpy())
+
+    return action_buffer
+
+def get_action_buffer_tensor(buffer):
+
+    tensor_values = []
+    for v in buffer:  
+        v = torch.from_numpy(v).float()
+        tensor_values.append(v)
+
+    # Stack to (N_history, ... ) + add B dimension
+    stacked_values = torch.stack(tensor_values, dim=0).unsqueeze(0)
+
+    return stacked_values
 
 
 def main():
@@ -148,9 +164,26 @@ def main():
     real_action_list = []
     net_action_list = []
 
+    # Adjust fps_dataset to fps_sampling
+    dataset_meta = LeRobotDatasetMetadata(repo_id=None, root=dataset_path)
+    fps_dataset = dataset_meta.fps
+    fps_sampling_chunk = model_cfg["sampling"]["fps_sampling_chunk"]
+    step_chunk = round(fps_dataset / fps_sampling_chunk)
+
+    # Pre-fill past actions
+    action_buffer = init_action_buffer(train_loader, N_history)
+
     # iterate over dataloader
     for step, batch in enumerate(train_loader):
         
+        # Skip sample to align fps_sampling_chunk with dataloader (it slides every single elements otherwise)
+        if step % step_chunk != 0:
+            continue
+        
+        # Eventually include past actions
+        if transforms_cfg["state"]["use_past_actions"]:
+            batch["action"][:, :N_history, ...] = get_action_buffer_tensor(action_buffer)
+
         # Move data to device
         batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}            
 
@@ -203,9 +236,8 @@ def main():
         # Save estimated action from policy
         net_action_list.append(action_pre_tf)
         
-        # # Save action in buffer safely --> con dataloader se uso past actions = true come faccio? input policy è batch dataloader, devo mettere output policy
-        # with self.buffer_lock:
-        #     self.buffers["action"].append((self.get_clock().now().to_msg(), action_pre_tf))
+        # Save action in buffer
+        action_buffer.append(action_pre_tf)
 
     # Plotting
 
