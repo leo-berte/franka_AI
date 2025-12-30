@@ -10,13 +10,6 @@ from franka_ai.utils.seed_everything import make_worker_init_fn
 
 
 
-# TODO:
-
-# 1) Togliere episodio 0 
-
-
-
-
 def make_dataloader(
     repo_id=None, 
     dataset_path=None, 
@@ -92,8 +85,8 @@ def make_dataloader(
     # Split indeces for training and validation
     num_train_episodes = int(num_episodes * train_split_ratio)
     num_val_episodes = int(num_episodes * val_split_ratio)
-    train_episodes = [0] # episode_ids[:num_train_episodes] ##### --> TEMP KINEMATICS ONLY TEST
-    val_episodes = [0] # episode_ids[num_train_episodes:num_train_episodes + num_val_episodes] ##### --> TEMP KINEMATICS ONLY TEST
+    train_episodes = episode_ids[:num_train_episodes] 
+    val_episodes = episode_ids[num_train_episodes:num_train_episodes + num_val_episodes]
 
     # Load the raw dataset (hub or local)
     train_ds = LeRobotDatasetPatch(
@@ -149,6 +142,3 @@ def make_dataloader(
     )
 
     return train_loader, train_episodes, val_loader, val_episodes
-
-
-

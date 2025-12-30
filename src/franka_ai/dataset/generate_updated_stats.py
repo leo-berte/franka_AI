@@ -160,7 +160,7 @@ def main():
     # Get episode indeces
     meta = LeRobotDatasetMetadata(repo_id=None, root=dataset_path)
     all_eps = list(meta.episodes.keys()) # list of episode indeces
-
+    
     # Set output folder to save new stats
     output_path = Path(f"configs/{config_folder}") / "episodes_stats_transformed.jsonl"
 

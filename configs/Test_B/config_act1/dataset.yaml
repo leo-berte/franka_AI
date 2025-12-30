@@ -85,15 +85,15 @@ transforms:
       noise_std_dev:
         joint_vel: 0.02       # σ ≈ rad/s
         joint_torque: 0.2     # σ ≈ Nm
-    use_axis_angle: False
-    use_past_actions: True
+    use_axis_angle: False 
+    use_past_actions: False
     include: # define observation state components
-    - q
-    - qdot
+    # - q
+    # - qdot
     # - tau
     # - fext
-    # - ee_pos
-    # - ee_ori
+    - ee_pos
+    - ee_ori
     - gripper
 
   action:
