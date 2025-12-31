@@ -17,8 +17,8 @@ from franka_ai.models.factory import get_policy_class
 """
 Run the code: 
 
-python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                           --checkpoint outputs/checkpoints/single_outliers_act_2025-12-30_08-40-07 \
+python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
+                                           --checkpoint outputs/checkpoints/one_bag_act_2025-12-30_16-57-59 \
                                            --policy act
 
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
@@ -153,11 +153,12 @@ def main():
     policy.reset() # reset the policy to prepare for rollout
 
     # Create loaders
-    train_loader, _, val_loader, _ = make_dataloader(
+    train_loader, _, _, _ = make_dataloader(
         dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
-        model_cfg=model_cfg
+        model_cfg=model_cfg,
+        selected_episodes=[2]
     )
 
     # Save data
@@ -343,15 +344,5 @@ def main():
     plt.show()
     plt.close()
 
-
-
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-

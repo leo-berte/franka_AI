@@ -3,12 +3,6 @@ import numpy as np
 import torch
 
 
-
-# NOTE:
-# I can plot quat pred Vs quat real && aa pred Vs aa real super precisely.. 
-# but when I do aa_pred --> q pred Vs q real the plot has lots of spikes
-# Check test_orientations.py
-
 # TODO: 
 
 # 1) add relative vs absolute cart pose as actions/state
@@ -195,7 +189,7 @@ class CustomTransforms():
 
                 # apply augmentations
                 v_aug = self.img_tf_train(v_flat) if self.train else self.img_tf_inference(v_flat)
-                v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST
+                # v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST
                 
                 # reshape back
                 v_aug = v_aug.reshape(*pre_shape, *v_aug.shape[-3:])

@@ -10,12 +10,14 @@ from franka_ai.utils.seed_everything import make_worker_init_fn
 
 
 
+
 def make_dataloader(
     repo_id=None, 
     dataset_path=None, 
     dataloader_cfg=None,
     dataset_cfg=None,
-    model_cfg=None
+    model_cfg=None,
+    selected_episodes=None
 ):
     
     """
@@ -34,17 +36,6 @@ def make_dataloader(
     Args:
         repo_id: Hugging Face repo ID
         dataseth_path: local dataset root directory
-        visual_obs_names: names of the visual observations
-        device: CPU or GPU
-        batch_size: number of samples per batch
-        shuffle: whether to shuffle the dataset
-        train_split: training split ratio (0–1)
-        num_workers: number of parallel CPU workers
-        seed_val: base seed for reproducibility
-        N_history: number of past frames (including current)
-        N_chunk: number of future action frames
-        fps: desired dataset frame rate to build delta_timestamps (Hz)
-        print_ds_info: print dataset statistics
 
     Returns:
         (DataLoader, DataLoader): train and validation dataloaders
@@ -82,11 +73,15 @@ def make_dataloader(
     if train_split_ratio +  val_split_ratio > 1.0:
         raise ValueError("train_split_ratio + val_split_ratio must not be greater than 1.0.")
 
-    # Split indeces for training and validation
-    num_train_episodes = int(num_episodes * train_split_ratio)
-    num_val_episodes = int(num_episodes * val_split_ratio)
-    train_episodes = episode_ids[:num_train_episodes] 
-    val_episodes = episode_ids[num_train_episodes:num_train_episodes + num_val_episodes]
+    # Select episodes (manually or with train/val split ratio)
+    if selected_episodes:
+        train_episodes=selected_episodes
+        val_episodes=selected_episodes
+    else:
+        num_train_episodes = int(num_episodes * train_split_ratio)
+        num_val_episodes = int(num_episodes * val_split_ratio)
+        train_episodes = episode_ids[:num_train_episodes] 
+        val_episodes = episode_ids[num_train_episodes:num_train_episodes + num_val_episodes]
 
     # Load the raw dataset (hub or local)
     train_ds = LeRobotDatasetPatch(

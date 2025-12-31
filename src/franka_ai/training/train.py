@@ -24,7 +24,7 @@ from franka_ai.models.factory import get_policy_config_class, make_policy, get_p
 Run the code: 
 
 python src/franka_ai/training/train.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                       --config Test_B/config_act1 \
+                                       --config Test_B/config_act2 \
                                        --policy act \
                                        --pretrained outputs/checkpoints/kinematics_tests/single_outliers_act_2025-12-25_21-08-42/best_model.pt
 
@@ -266,7 +266,7 @@ def train():
             running_train_loss += loss.item()
 
             # Log metrics
-            if step > 400 and step % log_freq == 0:
+            if step > lr_warmup_steps and step % log_freq == 0:
 
                 # Compute metrics
                 avg_step_time = running_time_sum / log_freq
@@ -285,7 +285,7 @@ def train():
                 tsbrd_writer.add_scalar("Metrics/lr", optimizer.param_groups[0]["lr"], step) # learning rate
             
             # Log eval loss
-            if step > 0 and step % eval_freq == 0:
+            if step > lr_warmup_steps and step % eval_freq == 0:
 
                 # Run evaluation on validation set
                 policy.eval()
@@ -313,7 +313,7 @@ def train():
                     csv_writer.writerow([step, avg_train_loss, avg_val_loss])
 
             # Save checkpoints
-            if step > 0 and step % save_ckpt_freq == 0: 
+            if step > lr_warmup_steps and step % save_ckpt_freq == 0: 
 
                 # Save checkpoint
                 ckpt_path = os.path.join(checkpoints_dir, f"step_{step:08d}.pt")

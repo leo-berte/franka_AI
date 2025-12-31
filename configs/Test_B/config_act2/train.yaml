@@ -4,7 +4,7 @@
 
 training:
 
-  training_steps: 80000    # number of training steps
+  training_steps: 40000    # number of training steps
   log_freq: 100            # logs train loss, gradNorm, lr
   eval_freq: 500           # logs eval loss
   save_ckpt_freq: 10000     # save checkpoints
