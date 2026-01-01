@@ -24,7 +24,7 @@ from franka_ai.models.factory import get_policy_config_class, make_policy, get_p
 Run the code: 
 
 python src/franka_ai/training/train.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                       --config Test_B/config_act2 \
+                                       --config config \
                                        --policy act \
                                        --pretrained outputs/checkpoints/kinematics_tests/single_outliers_act_2025-12-25_21-08-42/best_model.pt
 
@@ -134,7 +134,8 @@ def train():
         dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
-        model_cfg=models_cfg[policy_name]
+        model_cfg=models_cfg[policy_name],
+        # selected_episodes=[0]
     )
 
     # ---------------------

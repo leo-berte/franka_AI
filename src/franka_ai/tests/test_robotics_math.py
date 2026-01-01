@@ -156,6 +156,11 @@ def main():
     quat_error_deg = np.degrees(quat_error_rad)
     print(quat_error_deg)
 
+    # check consistency geodedic error double representation
+    print("Test geodedic error quaternions: ", 
+          quaternion_geodesic_error(torch.tensor([0.550899, -0.535585,  0.162067,  0.619188]),
+                                    torch.tensor([-0.550899, 0.535585,  -0.162067,  -0.619188])).mean().item())
+
     # --------------------------------------------------
     # Test matrix <-> 6D
     # --------------------------------------------------

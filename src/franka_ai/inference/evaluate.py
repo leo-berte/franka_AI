@@ -8,6 +8,7 @@ import os
 from lerobot.common.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from franka_ai.dataset.transforms import CustomTransforms
+from franka_ai.utils.robotics_math import *
 from franka_ai.dataset.load_dataset import make_dataloader
 from franka_ai.dataset.utils import get_configs_dataset
 from franka_ai.models.utils import get_configs_models
@@ -17,8 +18,24 @@ from franka_ai.models.factory import get_policy_class
 """
 Run the code: 
 
+# quaternion no standardize
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                           --checkpoint outputs/checkpoints/one_bag_act_2025-12-30_16-57-59 \
+                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-01_17-35-34 \
+                                           --policy act
+
+# quaternion
+python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
+                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-01_12-21-05 \
+                                           --policy act
+
+# axisangle
+python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
+                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-01_12-48-57 \
+                                           --policy act
+
+# 6D
+python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
+                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-01_13-16-28 \
                                            --policy act
 
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
@@ -51,40 +68,7 @@ def parse_args():
     # return args
     return args.dataset, args.checkpoint, args.policy
 
-def align_quat(q_pred, q_ref):
-
-    if torch.dot(q_pred, q_ref) < 0:
-        return -q_pred
-    return q_pred
-
-def normalize_quat(q):
-
-    """    
-    q: array-like (..., 4) [x, y, z, w]
-    ritorna: array numpy normalized
-    """
-
-    norm = torch.linalg.norm(q, axis=-1, keepdims=True) + 1e-8
-    q_normalized = q / norm
-
-    return q_normalized
-
-def quat_angle_error(q1, q2):
-
-    """
-    q1, q2: (..., 4) quaternion [x,y,z,w]
-    ritorna errore angolare in radianti
-    """
-
-    q1 = q1 / np.linalg.norm(q1, axis=-1, keepdims=True)
-    q2 = q2 / np.linalg.norm(q2, axis=-1, keepdims=True)
-
-    dot = np.sum(q1 * q2, axis=-1)
-    dot = np.clip(np.abs(dot), -1.0, 1.0)
-
-    return 2 * np.arccos(dot)
-
-def init_action_buffer(loader, N_history):
+def init_action_buffer(loader, N_history): 
     
     # get batch
     batch = next(iter(loader))
@@ -128,6 +112,7 @@ def main():
     device = torch.device(dataloader_cfg["device"])
     N_history = model_cfg["params"].get("n_obs_steps") or model_cfg["params"].get("N_history")
     N_chunk = model_cfg["params"].get("horizon") or model_cfg["params"].get("chunk_size") or model_cfg["params"].get("N_chunk")
+    orientation_type = transforms_cfg["orientations"]["type"]
 
     # Consistency checks
     # if transforms_cfg["state"]["use_past_actions"] == True:
@@ -158,7 +143,7 @@ def main():
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         model_cfg=model_cfg,
-        selected_episodes=[2]
+        selected_episodes=[0]
     )
 
     # Save data
@@ -188,9 +173,15 @@ def main():
         # Move data to device
         batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}            
 
-        # Save real action from dataset
-        real_action = batch["action"][:, N_history, ...].to("cpu").numpy() # (B, D) 
-        real_action_list.append(real_action.squeeze(0))  
+        # Extract real action
+        real_action = batch["action"][:, N_history, ...].to("cpu")  # (B, D)
+        q = real_action[:, 3:7]  # (B, 4)
+        q = q[:, [3, 0, 1, 2]] # Permute to PyTorch3D format: w x y z
+        q = normalize_quat(q) # Normalize
+        # q = standardize_quaternion(q) # Standardize (ensure w >= 0)
+        q = q[:, [1, 2, 3, 0]] # Convert back to dataset format: x y z w
+        real_action[:, 3:7] = q # Put back into action vector
+        real_action_list.append(real_action.squeeze(0).numpy())
 
         # Apply custom transforms
         batch = tf_inference.transform(batch)
@@ -219,13 +210,24 @@ def main():
         # Move to CPU
         action = action.squeeze(0).to("cpu")
 
-        # Convert axis-angle to quaternion
-        if transforms_cfg["state"]["use_axis_angle"] == True:
-            quat = CustomTransforms.axis_angle2quaternion(action[3:6])
-            quat = align_quat(quat, torch.tensor(real_action_list[-1][3:7]))
-        else:
+        # Convert to correct orientation representation
+        if orientation_type == "quaternion":
             quat = action[3:7]
+            # quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)        # DECOMMENTO TO COMPARE CAMS TEST
             quat = normalize_quat(quat)
+            # quat = standardize_quaternion(quat)
+            quat = quat[..., [1,2,3,0]] # PyTorch3D (w,x,y,z) → Dataset (x,y,z,w) 
+        elif orientation_type == "axis_angle":
+            quat = axis_angle_to_quaternion(action[3:6]) 
+            quat = normalize_quat(quat)
+            # quat = standardize_quaternion(quat)
+            # quat = align_quat(quat, torch.tensor(real_action_list[-1][3:7]))
+            quat = quat[..., [1,2,3,0]] # PyTorch3D (w,x,y,z) → Dataset (x,y,z,w) 
+        elif orientation_type == "6D":
+            quat = matrix_to_quaternion(rotation_6d_to_matrix(action[3:9]))
+            quat = normalize_quat(quat)
+            # quat = standardize_quaternion(quat) # same result with ON or OFF
+            quat = quat[..., [1,2,3,0]] # PyTorch3D (w,x,y,z) → Dataset (x,y,z,w) 
 
         # Convert tensors to numpy
         action_np = action.numpy()
@@ -253,7 +255,7 @@ def main():
     pred_pos = pred_actions[:, :3]
 
     real_quat = real_actions[:, 3:7]
-    pred_quat = pred_actions[:, 3:7]   
+    pred_quat = pred_actions[:, 3:7]  
 
     real_gripper = real_actions[:, -1]
     pred_gripper_cont = pred_actions[:, -1]
@@ -264,7 +266,8 @@ def main():
     pos_error_norm = np.linalg.norm(pos_error, axis=1)
 
     # Orientation error 
-    ori_error_rad = quat_angle_error(pred_quat, real_quat)
+    ori_error_rad = quaternion_geodesic_error(torch.tensor(pred_quat), torch.tensor(real_quat))
+    ori_error_rad = ori_error_rad.numpy()
     ori_error_deg = np.degrees(ori_error_rad)
 
     # Compute mean errors

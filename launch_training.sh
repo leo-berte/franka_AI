@@ -8,6 +8,19 @@ DATA=/mnt/Data/datasets/lerobot/one_bag
 POLICY=act
 
 
+
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_quat
+# python src/franka_ai/training/train.py --dataset $DATA --config config_quat --policy $POLICY
+
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config test_orientations/config_aa
+# python src/franka_ai/training/train.py --dataset $DATA --config test_orientations/config_aa --policy $POLICY
+
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config test_orientations/config_6d
+# python src/franka_ai/training/train.py --dataset $DATA --config test_orientations/config_6d --policy $POLICY
+
+
+
+
 # python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act1
 # python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act1 --policy $POLICY
 
@@ -17,7 +30,7 @@ POLICY=act
 # python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act3
 # python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act3 --policy $POLICY
 
-# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act4
+python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act4
 python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act4 --policy $POLICY
 
 # python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act5

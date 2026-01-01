@@ -63,7 +63,7 @@ def quaternion_geodesic_error(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tenso
     # stabilità numerica
     dot = torch.clamp(dot, -1.0, 1.0)
 
-    return 2.0 * torch.acos(dot).mean().item()
+    return 2.0 * torch.acos(dot)
 
 
 def rotation_matrix_geodesic_error(R1: torch.Tensor, R2: torch.Tensor) -> torch.Tensor:
@@ -79,19 +79,19 @@ def rotation_matrix_geodesic_error(R1: torch.Tensor, R2: torch.Tensor) -> torch.
     cos_theta = (trace - 1.0) / 2.0
     cos_theta = torch.clamp(cos_theta, -1.0, 1.0)
 
-    return torch.acos(cos_theta).mean().item()
+    return torch.acos(cos_theta)
 
 
 def vector_error(v1: torch.Tensor, v2: torch.Tensor) -> torch.Tensor:
     """
-    L2 error on batch
+    L2 error on batch.
     """
     return torch.norm(v1 - v2, dim=-1).mean().item()
 
 
 def align_quat(q_pred: torch.Tensor, q_ref: torch.Tensor) -> torch.Tensor:
     """  
-    ???
+    Align target quaternion double representation wrt current quaternion.
     """  
     if torch.dot(q_pred, q_ref) < 0:
         return -q_pred
@@ -100,8 +100,8 @@ def align_quat(q_pred: torch.Tensor, q_ref: torch.Tensor) -> torch.Tensor:
 
 def normalize_quat(q: torch.Tensor) -> torch.Tensor:
     """  
-    ???
-    """  
+    Normalize quaternions.
+    """
     norm = torch.linalg.norm(q, axis=-1, keepdims=True) + 1e-8
     q_normalized = q / norm
 
@@ -234,7 +234,8 @@ def matrix_to_quaternion(matrix: torch.Tensor) -> torch.Tensor:
     expand_dims = list(batch_dim) + [1, 4]
     gather_indices = indices.unsqueeze(-1).expand(expand_dims)
     out = torch.gather(quat_candidates, -2, gather_indices).squeeze(-2)
-    return standardize_quaternion(out)
+    # return standardize_quaternion(out)
+    return out
 
 
 def _axis_angle_rotation(axis: str, angle: torch.Tensor) -> torch.Tensor:

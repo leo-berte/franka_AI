@@ -80,12 +80,14 @@ transforms:
         translate: [0.05, 0.05]
         p: 0.5
 
+  orientations: 
+    type: quaternion # [quaternion, 6D, axis_angle]
+    
   state:
     augmentations:
       noise_std_dev:
         joint_vel: 0.02       # σ ≈ rad/s
         joint_torque: 0.2     # σ ≈ Nm
-    use_axis_angle: False
     use_past_actions: True
     include: # define observation state components
     - q

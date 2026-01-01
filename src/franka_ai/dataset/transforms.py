@@ -2,10 +2,14 @@ import kornia.augmentation as K
 import numpy as np
 import torch
 
+from franka_ai.utils.robotics_math import *
+
 
 # TODO: 
 
 # 1) add relative vs absolute cart pose as actions/state
+# update description of methods/classes in the repo
+
 
 
 class CustomTransforms():
@@ -46,8 +50,10 @@ class CustomTransforms():
         self.joint_vel_std_dev = state_aug_cfg["noise_std_dev"]["joint_vel"]
         self.joint_torque_std_dev = state_aug_cfg["noise_std_dev"]["joint_torque"]
 
+        # orientations
+        self.orientation_type = transforms_cfg["orientations"]["type"]
+        
         # state transforms
-        self.use_axis_angle = transforms_cfg["state"]["use_axis_angle"]
         self.use_past_actions = transforms_cfg["state"]["use_past_actions"]
         self.include_states = transforms_cfg["state"]["include"]
 
@@ -128,49 +134,6 @@ class CustomTransforms():
         else:
             return float(value > gripper_half_width)    
 
-    @staticmethod
-    def quaternion2axis_angle(q):
-
-        """
-        q: (..., 4)  in (x, y, z, w)
-        returns: (..., 3) axis-angle
-        """
-
-        # Ensure normalized quaternion
-        q = q / (q.norm(dim=-1, keepdim=True) + 1e-8)
-
-        x, y, z, w = q.unbind(-1)
-
-        angle = 2 * torch.atan2(torch.sqrt(x*x + y*y + z*z), w)
-        axis = torch.stack([x, y, z], dim=-1)
-        axis_norm = axis.norm(dim=-1, keepdim=True) + 1e-8
-        axis = axis / axis_norm
-
-        # Fix sign ambiguity: enforce SciPy-like convention: angle ∈ [-π, π]
-        angle = ((angle + torch.pi) % (2 * torch.pi)) - torch.pi
-
-        return axis * angle.unsqueeze(-1)
-    
-    @staticmethod
-    def axis_angle2quaternion(aa):
-
-        """
-        aa: (..., 3) axis * angle
-        returns (..., 4) quaternion (x, y, z, w)
-        """
-
-        angle = torch.norm(aa, dim=-1, keepdim=True) + 1e-8
-        axis = aa / angle
-
-        half = angle * 0.5
-        w = torch.cos(half)
-        xyz = axis * torch.sin(half)
-
-        quat = torch.cat([xyz, w], dim=-1)
-        quat_normalized = quat / (torch.norm(quat) + 1e-8)
-
-        return quat_normalized
-
     def transform(self, sample):
 
         state_parts = []
@@ -189,7 +152,7 @@ class CustomTransforms():
 
                 # apply augmentations
                 v_aug = self.img_tf_train(v_flat) if self.train else self.img_tf_inference(v_flat)
-                # v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST
+                # v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST     # COMMENTO TO COMPARE CAMS TEST
                 
                 # reshape back
                 v_aug = v_aug.reshape(*pre_shape, *v_aug.shape[-3:])
@@ -220,7 +183,14 @@ class CustomTransforms():
                         part = v[..., self.state_slices["ee_pos"]]
                     elif state_name == "ee_ori": # convert orientation
                         q_orientation = v[..., self.state_slices["ee_quaternion"]]
-                        part = self.quaternion2axis_angle(q_orientation) if self.use_axis_angle else q_orientation
+                        # q_orientation = q_orientation[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z) # COMMENTO TO COMPARE CAMS TEST
+                        # q_orientation = standardize_quaternion(q_orientation)
+                        if self.orientation_type == "axis_angle":
+                            part = quaternion_to_axis_angle(q_orientation)
+                        elif self.orientation_type == "6D":
+                            part = matrix_to_rotation_6d(quaternion_to_matrix(q_orientation))
+                        elif self.orientation_type == "quaternion":
+                            part = q_orientation
                     elif state_name == "gripper": # convert to discrete gripper state (0.0 or 1.0)
                         gripper_cont = v[..., self.state_slices["gripper"]]
                         part = self.gripper_state_continuous2discrete(gripper_cont) 
@@ -241,7 +211,14 @@ class CustomTransforms():
                         part = v[..., self.action_slices["ee_pos"]]
                     elif action_name == "ee_ori": # convert orientation
                         q_orientation = v[..., self.action_slices["ee_quaternion"]]
-                        part = self.quaternion2axis_angle(q_orientation) if self.use_axis_angle else q_orientation
+                        # q_orientation = q_orientation[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z) # COMMENTO TO COMPARE CAMS TEST
+                        # q_orientation = standardize_quaternion(q_orientation)
+                        if self.orientation_type == "axis_angle":
+                            part = quaternion_to_axis_angle(q_orientation)
+                        elif self.orientation_type == "6D":
+                            part = matrix_to_rotation_6d(quaternion_to_matrix(q_orientation))
+                        elif self.orientation_type == "quaternion":
+                            part = q_orientation
                     elif action_name == "gripper": # convert to discrete gripper state (0.0 or 1.0)
                         gripper_cont = v[..., self.action_slices["gripper"]]
                         part = self.gripper_action_continuous2discrete(gripper_cont) 
