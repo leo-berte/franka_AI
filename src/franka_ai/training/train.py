@@ -266,7 +266,7 @@ def train():
             running_train_loss += loss.item()
 
             # Log metrics
-            if step > lr_warmup_steps and step % log_freq == 0:
+            if step > 0 and step % log_freq == 0:
 
                 # Compute metrics
                 avg_step_time = running_time_sum / log_freq
@@ -285,7 +285,7 @@ def train():
                 tsbrd_writer.add_scalar("Metrics/lr", optimizer.param_groups[0]["lr"], step) # learning rate
             
             # Log eval loss
-            if step > lr_warmup_steps and step % eval_freq == 0:
+            if step > 0 and step % eval_freq == 0:
 
                 # Run evaluation on validation set
                 policy.eval()
@@ -313,7 +313,7 @@ def train():
                     csv_writer.writerow([step, avg_train_loss, avg_val_loss])
 
             # Save checkpoints
-            if step > lr_warmup_steps and step % save_ckpt_freq == 0: 
+            if step > 0 and step % save_ckpt_freq == 0: 
 
                 # Save checkpoint
                 ckpt_path = os.path.join(checkpoints_dir, f"step_{step:08d}.pt")
@@ -328,11 +328,15 @@ def train():
             if step > training_steps:
                 done = True
                 break
+    
+    # Skip steps < lr_warmup_steps for plotting losses
+    train_steps_f, train_losses_f = zip(*[(s, l) for s, l in zip(train_steps, train_losses) if s > lr_warmup_steps])
+    val_steps_f, val_losses_f = zip(*[(s, l) for s, l in zip(val_steps, val_losses) if s > lr_warmup_steps])
 
     # Plot losses
     plt.figure(figsize=(8, 5))
-    plt.plot(train_steps, train_losses, label="Train Loss")
-    plt.plot(val_steps, val_losses, label="Validation Loss")
+    plt.plot(train_steps_f, train_losses_f, label="Train Loss")
+    plt.plot(val_steps_f, val_losses_f, label="Validation Loss")
     plt.xlabel("Steps")
     plt.ylabel("Loss")
     plt.title("Training and Validation Loss")
