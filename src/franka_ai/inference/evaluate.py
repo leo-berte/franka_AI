@@ -18,24 +18,8 @@ from franka_ai.models.factory import get_policy_class
 """
 Run the code: 
 
-# quaternion no standardize
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-01_17-35-34 \
-                                           --policy act
-
-# quaternion
-python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-01_12-21-05 \
-                                           --policy act
-
-# axisangle
-python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-01_12-48-57 \
-                                           --policy act
-
-# 6D
-python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-01_13-16-28 \
+                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-01_21-37-20 \
                                            --policy act
 
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
@@ -143,7 +127,7 @@ def main():
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         model_cfg=model_cfg,
-        selected_episodes=[0]
+        selected_episodes=[10]
     )
 
     # Save data
@@ -213,7 +197,7 @@ def main():
         # Convert to correct orientation representation
         if orientation_type == "quaternion":
             quat = action[3:7]
-            # quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)        # DECOMMENTO TO COMPARE CAMS TEST
+            # quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)  # DECOMMENTO TO COMPARE CAMS TEST
             quat = normalize_quat(quat)
             # quat = standardize_quaternion(quat)
             quat = quat[..., [1,2,3,0]] # PyTorch3D (w,x,y,z) → Dataset (x,y,z,w) 

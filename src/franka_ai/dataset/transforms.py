@@ -183,7 +183,7 @@ class CustomTransforms():
                         part = v[..., self.state_slices["ee_pos"]]
                     elif state_name == "ee_ori": # convert orientation
                         q_orientation = v[..., self.state_slices["ee_quaternion"]]
-                        # q_orientation = q_orientation[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z) # COMMENTO TO COMPARE CAMS TEST
+                        q_orientation = q_orientation[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z) # COMMENTO TO COMPARE CAMS TEST
                         # q_orientation = standardize_quaternion(q_orientation)
                         if self.orientation_type == "axis_angle":
                             part = quaternion_to_axis_angle(q_orientation)
@@ -211,7 +211,7 @@ class CustomTransforms():
                         part = v[..., self.action_slices["ee_pos"]]
                     elif action_name == "ee_ori": # convert orientation
                         q_orientation = v[..., self.action_slices["ee_quaternion"]]
-                        # q_orientation = q_orientation[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z) # COMMENTO TO COMPARE CAMS TEST
+                        q_orientation = q_orientation[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z) # COMMENTO TO COMPARE CAMS TEST
                         # q_orientation = standardize_quaternion(q_orientation)
                         if self.orientation_type == "axis_angle":
                             part = quaternion_to_axis_angle(q_orientation)
