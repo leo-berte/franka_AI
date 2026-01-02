@@ -23,8 +23,8 @@ from franka_ai.models.factory import get_policy_config_class, make_policy, get_p
 """
 Run the code: 
 
-python src/franka_ai/training/train.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                       --config config_kin_act1 \
+python src/franka_ai/training/train.py --dataset /mnt/Data/datasets/lerobot/one_bag \
+                                       --config config \
                                        --policy act \
                                        --pretrained outputs/checkpoints/kinematics_tests/single_outliers_act_2025-12-25_21-08-42/best_model.pt
 
@@ -43,7 +43,7 @@ http://localhost:6006/#timeseries
 # TODO:
 
 # 1) Check pre-training feature (i.e. When I add Fext in input features for example)
-# 2) Optimize training (see notes
+
 
  
 def parse_args():
@@ -134,7 +134,8 @@ def train():
         dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
-        model_cfg=models_cfg[policy_name]
+        model_cfg=models_cfg[policy_name],
+        # selected_episodes=[0]
     )
 
     # ---------------------
@@ -186,6 +187,10 @@ def train():
     policy.train() # during training layers like Dropout or BatchNorm are ON 
     policy.to(device)
 
+    # Activate Automatic Mixed Precision (AMP): forward/backward in FP16, loss/optimizer/weights in FP32
+    use_amp = (device.type == "cuda")
+    scaler = torch.amp.GradScaler(device="cuda", enabled=use_amp)
+
     # Optimizer
     optimizer = torch.optim.AdamW(policy.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
@@ -231,14 +236,25 @@ def train():
 
             # print("transform", {k:v.shape for k,v in batch.items() if isinstance(v, torch.Tensor)})
 
-            # Computes the loss (and optionally predictions)
-            loss, _ = policy.forward(batch)
-            print(loss.item())
+            # Use Automatic Mixed Precision (AMP)
+            with torch.amp.autocast(device_type="cuda", enabled=use_amp):
+                loss, _ = policy.forward(batch)
 
-            loss.backward() # compute gradients
-            total_norm = clip_grad_norm_(policy.parameters(), max_norm=1.0) # measure gradients norm and clip it
+            # Scale loss (multiply by bigger number) to avoid gradients computation (g'=dL'/dW) is zero
+            scaler.scale(loss).backward() 
+
+            # Unscale gradients before clipping (g=g'/s)
+            scaler.unscale_(optimizer)
+
+            # Prevent exploding gradients
+            total_norm = clip_grad_norm_(policy.parameters(), max_norm=1.0)
             running_grad_norm_sum += total_norm
-            optimizer.step() # do gradient step
+
+            # Update model weights + adapt scaling number
+            scaler.step(optimizer)
+            scaler.update()
+
+            # Update learning rate + reset gradients
             scheduler.step()
             optimizer.zero_grad()
 
@@ -251,7 +267,7 @@ def train():
             running_train_loss += loss.item()
 
             # Log metrics
-            if step % log_freq == 0:
+            if step > 0 and step % log_freq == 0:
 
                 # Compute metrics
                 avg_step_time = running_time_sum / log_freq
@@ -270,7 +286,7 @@ def train():
                 tsbrd_writer.add_scalar("Metrics/lr", optimizer.param_groups[0]["lr"], step) # learning rate
             
             # Log eval loss
-            if step % eval_freq == 0:
+            if step > 0 and step % eval_freq == 0:
 
                 # Run evaluation on validation set
                 policy.eval()
@@ -313,11 +329,15 @@ def train():
             if step > training_steps:
                 done = True
                 break
+    
+    # Skip steps < lr_warmup_steps for plotting losses
+    train_steps_f, train_losses_f = zip(*[(s, l) for s, l in zip(train_steps, train_losses) if s > lr_warmup_steps])
+    val_steps_f, val_losses_f = zip(*[(s, l) for s, l in zip(val_steps, val_losses) if s > lr_warmup_steps])
 
     # Plot losses
     plt.figure(figsize=(8, 5))
-    plt.plot(train_steps, train_losses, label="Train Loss")
-    plt.plot(val_steps, val_losses, label="Validation Loss")
+    plt.plot(train_steps_f, train_losses_f, label="Train Loss")
+    plt.plot(val_steps_f, val_losses_f, label="Validation Loss")
     plt.xlabel("Steps")
     plt.ylabel("Loss")
     plt.title("Training and Validation Loss")
@@ -330,9 +350,6 @@ def train():
     print(f"Saved training curve at: {plot_path}")
     plt.close()
 
-
 if __name__ == "__main__":
     
     train()
-
-

@@ -24,12 +24,12 @@ dataset:
   features:
     VISUAL:
       - observation.images.front_cam1
+      - observation.images.front_cam2
     STATE:
       - observation.state
     ACTION:
       - action
     REMOVE:
-      - observation.images.front_cam2
       - observation.images.front_cam3
       - observation.images.gripper_camera
       - observation.images.gripper_camera_depth
@@ -82,7 +82,7 @@ transforms:
 
   orientations: 
     type: quaternion # [quaternion, 6D, axis_angle]
-
+    
   state:
     augmentations:
       noise_std_dev:
@@ -90,10 +90,10 @@ transforms:
         joint_torque: 0.2     # σ ≈ Nm
     use_past_actions: False
     include: # define observation state components
-    - q
-    - qdot
-    - tau
-    - fext
+    # - q
+    # - qdot
+    # - tau
+    # - fext
     - ee_pos
     - ee_ori
     - gripper

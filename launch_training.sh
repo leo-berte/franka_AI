@@ -2,41 +2,42 @@
 
 ## NOTE: Check if it creates the same folder name for checkpoints since when 2 trainings are launched together ##
 
-DATA=/mnt/Data/datasets/lerobot/single_outliers
+DATA=/mnt/Data/datasets/lerobot/one_bag
 # DATA=/workspace/data/single_outliers
 
-POLICY=diffusion
+POLICY=act
 
-python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_diffusion_test &
-wait
-python src/franka_ai/training/train.py --dataset $DATA --config config_kin_diffusion_test --policy $POLICY &
-wait
 
-# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act2 &
-# wait
-# python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act2 --policy $POLICY &
-# wait
 
-# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act3 &
-# wait
-# python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act3 --policy $POLICY &
-# wait
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_quat
+# python src/franka_ai/training/train.py --dataset $DATA --config config_quat --policy $POLICY
 
-# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act4 &
-# wait
-# python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act4 --policy $POLICY &
-# wait
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config test_orientations/config_aa
+# python src/franka_ai/training/train.py --dataset $DATA --config test_orientations/config_aa --policy $POLICY
 
-# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act5 &
-# wait
-# python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act5 --policy $POLICY &
-# wait
-
-# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_kin_act6 &
-# wait
-# python src/franka_ai/training/train.py --dataset $DATA --config config_kin_act6 --policy $POLICY &
-# wait
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config test_orientations/config_6d
+# python src/franka_ai/training/train.py --dataset $DATA --config test_orientations/config_6d --policy $POLICY
 
 
 
 
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act1
+# python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act1 --policy $POLICY
+
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act2
+# python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act2 --policy $POLICY
+
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act3
+# python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act3 --policy $POLICY
+
+python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act4
+python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act4 --policy $POLICY
+
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act5
+# python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act5 --policy $POLICY
+
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act6
+# python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act6 --policy $POLICY
+
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act7
+# python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act7 --policy $POLICY

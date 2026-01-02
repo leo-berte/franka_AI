@@ -81,7 +81,7 @@ transforms:
         p: 0.5
 
   orientations: 
-    type: quaternion # [quaternion, 6D, axis_angle]
+    type: 6D # [quaternion, 6D, axis_angle]
 
   state:
     augmentations:
@@ -90,10 +90,10 @@ transforms:
         joint_torque: 0.2     # σ ≈ Nm
     use_past_actions: False
     include: # define observation state components
-    - q
-    - qdot
-    - tau
-    - fext
+    # - q
+    # - qdot
+    # - tau
+    # - fext
     - ee_pos
     - ee_ori
     - gripper

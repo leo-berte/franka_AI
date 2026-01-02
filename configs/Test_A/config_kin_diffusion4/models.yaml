@@ -1,0 +1,37 @@
+# ------
+# MODELS
+# ------
+
+diffusion: 
+
+  params:
+    n_obs_steps: 6
+    horizon: 32
+    n_action_steps: 16
+
+  sampling:
+    fps_sampling_hist: 30
+    fps_sampling_chunk: 30
+
+act:
+
+  params:
+    n_obs_steps: 1
+    chunk_size: 50   
+    n_action_steps: 25
+
+  sampling:
+    fps_sampling_hist: 30
+    fps_sampling_chunk: 30
+
+
+my_policy:
+
+  params:
+    N_history: 3
+    N_chunk: 16
+    n_action_steps: 8
+
+  sampling:
+    fps_sampling_hist: 30
+    fps_sampling_chunk: 30
