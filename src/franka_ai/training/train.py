@@ -42,7 +42,7 @@ http://localhost:6006/#timeseries
 
 # TODO:
 
-# 1) Check pre-training feature (i.e. When I add Fext in input features for example)
+# 1) Check pre-training feature (i.e. When I add Fext in input features for example or new image)
 
 
  
@@ -135,7 +135,7 @@ def train():
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         model_cfg=models_cfg[policy_name],
-        # selected_episodes=[0]
+        selected_episodes=[0]
     )
 
     # ---------------------

@@ -97,7 +97,10 @@ def main():
     N_history = model_cfg["params"].get("n_obs_steps") or model_cfg["params"].get("N_history")
     N_chunk = model_cfg["params"].get("horizon") or model_cfg["params"].get("chunk_size") or model_cfg["params"].get("N_chunk")
     orientation_type = transforms_cfg["orientations"]["type"]
-
+    include_actions = transforms_cfg["action"]["include"]
+    state_ranges = dataset_cfg["state_slices"]
+    state_slices = {k: slice(v[0], v[1]) for k, v in state_ranges.items()}
+    
     # Consistency checks
     # if transforms_cfg["state"]["use_past_actions"] == True:
     #     raise ValueError("Not implemented yet the possibility to use past actions in state.")
@@ -127,7 +130,7 @@ def main():
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         model_cfg=model_cfg,
-        selected_episodes=[10]
+        selected_episodes=[0]
     )
 
     # Save data
@@ -150,14 +153,23 @@ def main():
         if step % step_chunk != 0:
             continue
         
-        # Eventually include past actions
+        # Eventually include past actions (taken from policy output)
         if transforms_cfg["state"]["use_past_actions"]:
             batch["action"][:, :N_history, ...] = get_action_buffer_tensor(action_buffer)
 
         # Move data to device
         batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}            
 
-        # Extract real action
+        # Get base pose (last observed pose) to compute ee_pose_relative --> ee_pose_absolute
+        if "ee_pose_relative" in include_actions:
+            p_base = batch["observation.state"][..., state_slices["ee_pos"]][:, -1, :]   # (B,3)
+            quat_base = batch["observation.state"][..., state_slices["ee_quaternion"]][:, -1, :]  # (B,4)
+            quat_base = quat_base[:, [3,0,1,2]]          # xyzw → wxyz
+            R_base = quaternion_to_matrix(quat_base)     # (B,3,3)
+            p_base = p_base.squeeze(0)
+            R_base = R_base.squeeze(0)
+
+        # Extract real action from dataset
         real_action = batch["action"][:, N_history, ...].to("cpu")  # (B, D)
         q = real_action[:, 3:7]  # (B, 4)
         q = q[:, [3, 0, 1, 2]] # Permute to PyTorch3D format: w x y z
@@ -170,7 +182,7 @@ def main():
         # Apply custom transforms
         batch = tf_inference.transform(batch)
 
-        # Convert (B,N_hist, D) in (B, D) by taking last timestep
+        # Convert (B,N_hist, D) in (B, D) by taking last timestep (input format required by policy)
         for k, v in batch.items():
             if isinstance(v, torch.Tensor) and v.dim() >= 3: 
                 v = v[:, -1, ...].contiguous()
@@ -194,31 +206,45 @@ def main():
         # Move to CPU
         action = action.squeeze(0).to("cpu")
 
-        # Convert to correct orientation representation
-        if orientation_type == "quaternion":
-            quat = action[3:7]
-            # quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)  # DECOMMENTO TO COMPARE CAMS TEST
-            quat = normalize_quat(quat)
-            # quat = standardize_quaternion(quat)
-            quat = quat[..., [1,2,3,0]] # PyTorch3D (w,x,y,z) → Dataset (x,y,z,w) 
-        elif orientation_type == "axis_angle":
-            quat = axis_angle_to_quaternion(action[3:6]) 
-            quat = normalize_quat(quat)
-            # quat = standardize_quaternion(quat)
-            # quat = align_quat(quat, torch.tensor(real_action_list[-1][3:7]))
-            quat = quat[..., [1,2,3,0]] # PyTorch3D (w,x,y,z) → Dataset (x,y,z,w) 
-        elif orientation_type == "6D":
-            quat = matrix_to_quaternion(rotation_6d_to_matrix(action[3:9]))
-            quat = normalize_quat(quat)
-            # quat = standardize_quaternion(quat) # same result with ON or OFF
-            quat = quat[..., [1,2,3,0]] # PyTorch3D (w,x,y,z) → Dataset (x,y,z,w) 
+        action_parts = []
 
-        # Convert tensors to numpy
-        action_np = action.numpy()
-        quat_np = quat.numpy()
+        for action_name in include_actions:
 
-        # Build final action as expected by controller
-        action_pre_tf = np.concatenate([action_np[:3], quat_np, [action_np[-1]]])
+            if action_name == "ee_pose_absolute":
+
+                pos = action[:3]
+
+                if orientation_type == "quaternion":
+                    quat = action[3:7]
+                elif orientation_type == "axis_angle":
+                    quat = axis_angle_to_quaternion(action[3:6]) 
+                elif orientation_type == "6D":
+                    quat = matrix_to_quaternion(rotation_6d_to_matrix(action[3:9]))
+                
+                quat = normalize_quat(quat)
+                # quat = standardize_quaternion(quat) # same result with ON or OFF
+                quat = quat[..., [1,2,3,0]] # PyTorch3D (w,x,y,z) → Dataset (x,y,z,w) 
+
+                part = torch.cat([pos, quat], dim=-1)
+
+            if action_name == "ee_pose_relative":
+                
+                # Get relative poses
+                pos = action[:3]
+                ori_6d = action[3:9]
+                R = rotation_6d_to_matrix(ori_6d)
+                
+                # Transform relative ee_pose in absolute ee_pose wrt last observed state
+                part = get_absolute_pose_wrt_last_state(pos, R, p_base.to("cpu"), R_base.to("cpu")) # quaternion notation for orientation
+
+            elif action_name == "gripper":
+                part = action[-1:]
+
+            # Add part to state vector
+            action_parts.append(part)
+
+        # Get final action with format as defined in the dataset
+        action_pre_tf = torch.cat(action_parts, dim=-1).numpy()
 
         # Save estimated action from policy
         net_action_list.append(action_pre_tf)

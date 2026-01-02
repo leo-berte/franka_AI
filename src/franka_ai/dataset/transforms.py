@@ -152,7 +152,7 @@ class CustomTransforms():
 
                 # apply augmentations
                 v_aug = self.img_tf_train(v_flat) if self.train else self.img_tf_inference(v_flat)
-                # v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST     # COMMENTO TO COMPARE CAMS TEST
+                v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST
                 
                 # reshape back
                 v_aug = v_aug.reshape(*pre_shape, *v_aug.shape[-3:])
@@ -171,26 +171,45 @@ class CustomTransforms():
 
                     if state_name == "q": 
                         part = v[..., self.state_slices["q"]]
+
                     elif state_name == "qdot": # add noise on joint velocities
                         part = v[..., self.state_slices["qdot"]]
                         part = self.joint_vel_transforms(part) if self.train else part
+
                     elif state_name == "tau": # add noise on joint torques
                         part = v[..., self.state_slices["tau"]]
                         part = self.joint_torque_transforms(part) if self.train else part
+
                     elif state_name == "fext": 
-                        part = v[..., self.state_slices["fext"]]
-                    elif state_name == "ee_pos": 
-                        part = v[..., self.state_slices["ee_pos"]]
-                    elif state_name == "ee_ori": # convert orientation
-                        q_orientation = v[..., self.state_slices["ee_quaternion"]]
-                        q_orientation = q_orientation[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z) # COMMENTO TO COMPARE CAMS TEST
-                        # q_orientation = standardize_quaternion(q_orientation)
+                        part = v[..., self.state_slices["fext"]]               
+
+                    elif state_name == "ee_pose_absolute": 
+                        pos = v[..., self.state_slices["ee_pos"]]
+                        quat = v[..., self.state_slices["ee_quaternion"]]
+                        quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)
+                        # quat = standardize_quaternion(quat)
                         if self.orientation_type == "axis_angle":
-                            part = quaternion_to_axis_angle(q_orientation)
+                            ori = quaternion_to_axis_angle(quat)
                         elif self.orientation_type == "6D":
-                            part = matrix_to_rotation_6d(quaternion_to_matrix(q_orientation))
+                            ori = matrix_to_rotation_6d(quaternion_to_matrix(quat))
                         elif self.orientation_type == "quaternion":
-                            part = q_orientation
+                            ori = quat
+                        part = torch.cat([pos, ori], dim=-1)
+
+                    elif state_name == "ee_pose_relative":
+                        pos = v[..., self.state_slices["ee_pos"]]
+                        quat = v[..., self.state_slices["ee_quaternion"]]
+                        quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)
+                        # quat = standardize_quaternion(quat)
+                        R = quaternion_to_matrix(quat)
+
+                        # base = last observed pose --> used both for STATE and ACTION
+                        p_base = pos[:, -1:, :]      # (B,1,3)
+                        R_base = R[:, -1:, :, :]     # (B,1,3,3)
+
+                        # transform absolute ee_poses in relative ee_poses wrt last observed state
+                        part = get_relative_poses_wrt_last_state(pos, R, p_base, R_base) # 6D notation for orientation
+
                     elif state_name == "gripper": # convert to discrete gripper state (0.0 or 1.0)
                         gripper_cont = v[..., self.state_slices["gripper"]]
                         part = self.gripper_state_continuous2discrete(gripper_cont) 
@@ -201,24 +220,38 @@ class CustomTransforms():
                 v_new = torch.cat(state_parts, dim=-1) # (B, N_h, D)
                 sample[k] = v_new
 
+
+        for k, v in sample.items(): # each sample contains the N_h dimension (but no B dimension)
+
             if k in self.feature_groups["ACTION"]:
 
                 v = v.to(torch.float32) # convert data to tensor float32
 
                 for action_name in self.include_actions:
 
-                    if action_name == "ee_pos": 
-                        part = v[..., self.action_slices["ee_pos"]]
-                    elif action_name == "ee_ori": # convert orientation
-                        q_orientation = v[..., self.action_slices["ee_quaternion"]]
-                        q_orientation = q_orientation[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z) # COMMENTO TO COMPARE CAMS TEST
-                        # q_orientation = standardize_quaternion(q_orientation)
+                    if action_name == "ee_pose_absolute":
+                        pos = v[..., self.action_slices["ee_pos"]]
+                        quat = v[..., self.action_slices["ee_quaternion"]]
+                        quat = quat[..., [3,0,1,2]]  # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)
+                        # quat = standardize_quaternion(quat)
                         if self.orientation_type == "axis_angle":
-                            part = quaternion_to_axis_angle(q_orientation)
+                            ori = quaternion_to_axis_angle(quat)
                         elif self.orientation_type == "6D":
-                            part = matrix_to_rotation_6d(quaternion_to_matrix(q_orientation))
+                            ori = matrix_to_rotation_6d(quaternion_to_matrix(quat))
                         elif self.orientation_type == "quaternion":
-                            part = q_orientation
+                            ori = quat
+                        part = torch.cat([pos, ori], dim=-1)
+
+                    if action_name == "ee_pose_relative":
+                        pos = v[..., self.action_slices["ee_pos"]]
+                        quat = v[..., self.action_slices["ee_quaternion"]]
+                        quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)
+                        # quat = standardize_quaternion(quat)
+                        R = quaternion_to_matrix(quat)
+
+                        # transform absolute ee_poses in relative ee_poses wrt last observed state
+                        part = get_relative_poses_wrt_last_state(pos, R, p_base, R_base) # 6D notation for orientation
+
                     elif action_name == "gripper": # convert to discrete gripper state (0.0 or 1.0)
                         gripper_cont = v[..., self.action_slices["gripper"]]
                         part = self.gripper_action_continuous2discrete(gripper_cont) 
@@ -234,20 +267,18 @@ class CustomTransforms():
                 future_actions = v_new[:, self.N_history:, :] # (B, N_c, D)
                 sample[k] = future_actions
 
+
         # Manually remove extra length in "action_is_pad" created by LeRobot
         sample["action_is_pad"] = sample["action_is_pad"][:,self.N_history:]
 
         # append past actions to state if requested
         if self.use_past_actions:
             state_ft_name = self.feature_groups["STATE"][0]
-            sample[state_ft_name] = torch.cat([
-                sample[state_ft_name],
-                past_actions,
-            ], dim=-1)
+            sample[state_ft_name] = torch.cat([sample[state_ft_name], past_actions], dim=-1)
 
         # drop unwanted features
         sample = {k: v for k, v in sample.items() if k not in self.skip_features}
 
-        #print("transform", {k:v.shape for k,v in sample.items() if isinstance(v, torch.Tensor)})
+        # print("transform", {k:v.shape for k,v in sample.items() if isinstance(v, torch.Tensor)})
 
         return sample

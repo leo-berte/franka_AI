@@ -9,7 +9,7 @@ from franka_ai.models.utils import get_configs_models
 """
 Run the code: 
 
-python src/franka_ai/tests/test_dataloader.py --dataset /mnt/Data/datasets/lerobot/single_outliers --policy diffusion --config config1
+python src/franka_ai/tests/test_dataloader.py --dataset /mnt/Data/datasets/lerobot/one_bag --policy act --config test_orientations2/config_rel
 python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/single_outliers --policy diffusion --config config1
 
 Visualize lerobot dataset uploaded in HF:
