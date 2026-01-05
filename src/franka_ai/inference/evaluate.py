@@ -293,7 +293,7 @@ def main():
     t = np.arange(len(pos_error_norm))
 
     # Plot pred vs real actions
-    num_dims = real_actions.shape[1]
+    num_dims = pred_actions.shape[1]
     fig, axes = plt.subplots(num_dims, 1, figsize=(12, 2 * num_dims), sharex=True)
 
     for i in range(num_dims):
@@ -304,7 +304,7 @@ def main():
         if i == 0:
             axes[i].legend()
 
-    axes[-1].set_xlabel("Timesteps")
+    # axes[-1].set_xlabel("Timesteps")
     plt.suptitle(f"Comparison Actions : Model vs Dataset\n")
     plt.tight_layout()
     plt.figtext(0.99, 0.01, f"Checkpoint: {checkpoint_name}", ha="right", va="bottom", fontsize=10, color="gray")

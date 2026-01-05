@@ -94,6 +94,7 @@ transforms:
     # - qdot
     # - tau
     # - fext
+    - ee_pose_absolute
     - ee_pose_relative # [ee_pose_absolute, ee_pose_relative]
     - gripper
 

@@ -18,16 +18,6 @@ Device = Union[str, torch.device]
 # q dataset/control: (x,y,z,w)
 # q pytorch3D: (w,x,y,z)
 
-# standardize_quaternion
-# quaternion_to_matrix
-# matrix_to_quaternion --> usa standardize
-# axis_angle_to_matrix --> se uso fast=True usa formula diretta, senò passa dai quaternioni
-# matrix_to_axis_angle --> se uso fast=True usa formula diretta, senò passa dai quaternioni
-# axis_angle_to_quaternion --> formule dirette (non usa standardize però)
-# quaternion_to_axis_angle --> formule dirette
-# rotation_6d_to_matrix
-# matrix_to_rotation_6d
-
 
 ### CUSTOM LIBRARY ###
 
@@ -47,7 +37,6 @@ def get_relative_poses_wrt_last_state(pos, R, p_base, R_base):
     ori_6d = matrix_to_rotation_6d(R_rel) # R → 6D
 
     part = torch.cat([p_rel, ori_6d], dim=-1)
-    print("get_relative_poses_wrt_last_state: ", p_rel.shape, ori_6d.shape, part.shape)
 
     return part
 

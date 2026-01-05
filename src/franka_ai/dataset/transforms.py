@@ -7,7 +7,7 @@ from franka_ai.utils.robotics_math import *
 
 # TODO: 
 
-# 1) add relative vs absolute cart pose as actions/state
+# per come è ora, se uso in actions ee_rel ma non nello state, si rompe
 # update description of methods/classes in the repo
 
 
@@ -243,6 +243,7 @@ class CustomTransforms():
                         part = torch.cat([pos, ori], dim=-1)
 
                     if action_name == "ee_pose_relative":
+
                         pos = v[..., self.action_slices["ee_pos"]]
                         quat = v[..., self.action_slices["ee_quaternion"]]
                         quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)
