@@ -80,8 +80,8 @@ transforms:
         translate: [0.05, 0.05]
         p: 0.5
 
-  orientations: 
-    type: 6D # [quaternion, 6D, axis_angle]
+  orientations: # used only in ee_pose_absolute, NOT in ee_pose_relative
+    type: axis_angle # [quaternion, 6D, axis_angle]
 
   state:
     augmentations:
@@ -94,13 +94,11 @@ transforms:
     # - qdot
     # - tau
     # - fext
-    - ee_pos
-    - ee_ori
+    - ee_pose_absolute # [ee_pose_absolute, ee_pose_relative]
     - gripper
 
   action:
     include: # define action components
-    - ee_pos 
-    - ee_ori
+    - ee_pose_absolute # [ee_pose_absolute, ee_pose_relative]
     - gripper
 

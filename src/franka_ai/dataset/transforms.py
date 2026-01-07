@@ -5,29 +5,46 @@ import torch
 from franka_ai.utils.robotics_math import *
 
 
-# TODO: 
-
-# 1) add relative vs absolute cart pose as actions/state
-# update description of methods/classes in the repo
-
-
-
 class CustomTransforms():
 
     """
+    Build and apply custom transformations to dataset samples for training and inference.
 
-    TO UPDATE
+    Main functionalities include:
 
-    Build and apply custom transformations to dataset samples.
+    - Visual preprocessing:
+        * Image resizing (training and inference)
+        * Optional data augmentations during training (color jitter, blur, affine),
+          applied consistently across the temporal dimension to preserve temporal coherence.
 
-    Includes:
-    - Image preprocessing and augmentations (resize, jitter, affine, blur)
-    - Gaussian noise injection to proprioceptive data (joint positions, velocities, torques)
-    The same transformation or noise injection is applied for every data in the history to mantain temporal correlation.
+    - Proprioceptive state processing:
+        * Selection and concatenation of state features, configurable from dataset.yaml
+        * Optional Gaussian noise injection on joint velocities and torques (training only)
+
+    - Action processing:
+        * Selection and concatenation of action features, configurable from dataset.yaml
+        * Optional inclusion of past actions into the state vector
+
+    - Support for multiple orientation representations (quaternion, axis-angle, 6D)
+
+    - Absolute and relative end-effector poses:
+        * Supports both absolute and relative end-effector pose representations
+        * Relative poses (state and action) are computed with respect to the
+          last observed end-effector pose in the observation history
 
     Args:
-        train: boolean to decide whether to apply training augmentations or inference preprocessing.
-        feature_groups: eature names used in the dataset.
+        dataset_cfg (dict): Dataset configuration containing feature groups, state slices,
+            and action slices.
+
+        transforms_cfg (dict): Configuration for visual, state, and action transformations,
+            including augmentations and feature selection.
+
+        model_cfg (dict): Model configuration specifying temporal parameters such as
+            number of observation steps (N_history) and action chunk size (N_chunk).
+
+        train (bool, optional):
+            If True, enables training-time augmentations and noise injection.
+            If False, applies deterministic preprocessing suitable for inference.
     """
 
     def __init__(self, dataset_cfg, transforms_cfg, model_cfg, train=False):
@@ -138,6 +155,21 @@ class CustomTransforms():
 
         state_parts = []
         action_parts = []
+
+        # In case relative coordinates are used as features, save the base pose wrt which relative poses are computed
+        if "ee_pose_relative" in self.include_states or "ee_pose_relative" in self.include_actions:
+                    
+            # get current ee_abs_pose
+            v = sample[self.feature_groups["STATE"][0]].to(torch.float32)
+            pos = v[..., self.state_slices["ee_pos"]]
+            quat = v[..., self.state_slices["ee_quaternion"]]
+            quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)
+            # quat = standardize_quaternion(quat)
+            R = quaternion_to_matrix(quat)
+
+            # base = last observed pose --> used both for STATE and ACTION eventually
+            p_base = pos[:, -1:, :]      # (B,1,3)
+            R_base = R[:, -1:, :, :]     # (B,1,3,3)
         
         for k, v in sample.items(): # each sample contains the N_h dimension (but no B dimension)
             
@@ -152,7 +184,7 @@ class CustomTransforms():
 
                 # apply augmentations
                 v_aug = self.img_tf_train(v_flat) if self.train else self.img_tf_inference(v_flat)
-                # v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST     # COMMENTO TO COMPARE CAMS TEST
+                v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST
                 
                 # reshape back
                 v_aug = v_aug.reshape(*pre_shape, *v_aug.shape[-3:])
@@ -163,7 +195,7 @@ class CustomTransforms():
 
                 sample[k] = v_aug
 
-            if k in self.feature_groups["STATE"]:
+            elif k in self.feature_groups["STATE"]:
 
                 v = v.to(torch.float32) # convert data to tensor float32
 
@@ -171,26 +203,41 @@ class CustomTransforms():
 
                     if state_name == "q": 
                         part = v[..., self.state_slices["q"]]
+
                     elif state_name == "qdot": # add noise on joint velocities
                         part = v[..., self.state_slices["qdot"]]
                         part = self.joint_vel_transforms(part) if self.train else part
+
                     elif state_name == "tau": # add noise on joint torques
                         part = v[..., self.state_slices["tau"]]
                         part = self.joint_torque_transforms(part) if self.train else part
+
                     elif state_name == "fext": 
-                        part = v[..., self.state_slices["fext"]]
-                    elif state_name == "ee_pos": 
-                        part = v[..., self.state_slices["ee_pos"]]
-                    elif state_name == "ee_ori": # convert orientation
-                        q_orientation = v[..., self.state_slices["ee_quaternion"]]
-                        q_orientation = q_orientation[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z) # COMMENTO TO COMPARE CAMS TEST
-                        # q_orientation = standardize_quaternion(q_orientation)
+                        part = v[..., self.state_slices["fext"]]               
+
+                    elif state_name == "ee_pose_absolute": 
+                        pos = v[..., self.state_slices["ee_pos"]]
+                        quat = v[..., self.state_slices["ee_quaternion"]]
+                        quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)
+                        # quat = standardize_quaternion(quat)
                         if self.orientation_type == "axis_angle":
-                            part = quaternion_to_axis_angle(q_orientation)
+                            ori = quaternion_to_axis_angle(quat)
                         elif self.orientation_type == "6D":
-                            part = matrix_to_rotation_6d(quaternion_to_matrix(q_orientation))
+                            ori = matrix_to_rotation_6d(quaternion_to_matrix(quat))
                         elif self.orientation_type == "quaternion":
-                            part = q_orientation
+                            ori = quat
+                        part = torch.cat([pos, ori], dim=-1)
+
+                    elif state_name == "ee_pose_relative":
+                        pos = v[..., self.state_slices["ee_pos"]]
+                        quat = v[..., self.state_slices["ee_quaternion"]]
+                        quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)
+                        # quat = standardize_quaternion(quat)
+                        R = quaternion_to_matrix(quat)
+
+                        # transform absolute ee_poses in relative ee_poses wrt last observed state
+                        part = get_relative_poses_wrt_last_state(pos, R, p_base, R_base) # 6D notation for orientation
+
                     elif state_name == "gripper": # convert to discrete gripper state (0.0 or 1.0)
                         gripper_cont = v[..., self.state_slices["gripper"]]
                         part = self.gripper_state_continuous2discrete(gripper_cont) 
@@ -201,24 +248,36 @@ class CustomTransforms():
                 v_new = torch.cat(state_parts, dim=-1) # (B, N_h, D)
                 sample[k] = v_new
 
-            if k in self.feature_groups["ACTION"]:
+            elif k in self.feature_groups["ACTION"]:
 
                 v = v.to(torch.float32) # convert data to tensor float32
 
                 for action_name in self.include_actions:
 
-                    if action_name == "ee_pos": 
-                        part = v[..., self.action_slices["ee_pos"]]
-                    elif action_name == "ee_ori": # convert orientation
-                        q_orientation = v[..., self.action_slices["ee_quaternion"]]
-                        q_orientation = q_orientation[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z) # COMMENTO TO COMPARE CAMS TEST
-                        # q_orientation = standardize_quaternion(q_orientation)
+                    if action_name == "ee_pose_absolute":
+                        pos = v[..., self.action_slices["ee_pos"]]
+                        quat = v[..., self.action_slices["ee_quaternion"]]
+                        quat = quat[..., [3,0,1,2]]  # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)
+                        # quat = standardize_quaternion(quat)
                         if self.orientation_type == "axis_angle":
-                            part = quaternion_to_axis_angle(q_orientation)
+                            ori = quaternion_to_axis_angle(quat)
                         elif self.orientation_type == "6D":
-                            part = matrix_to_rotation_6d(quaternion_to_matrix(q_orientation))
+                            ori = matrix_to_rotation_6d(quaternion_to_matrix(quat))
                         elif self.orientation_type == "quaternion":
-                            part = q_orientation
+                            ori = quat
+                        part = torch.cat([pos, ori], dim=-1)
+
+                    if action_name == "ee_pose_relative":
+
+                        pos = v[..., self.action_slices["ee_pos"]]
+                        quat = v[..., self.action_slices["ee_quaternion"]]
+                        quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)
+                        # quat = standardize_quaternion(quat)
+                        R = quaternion_to_matrix(quat)
+
+                        # transform absolute ee_poses in relative ee_poses wrt last observed state
+                        part = get_relative_poses_wrt_last_state(pos, R, p_base, R_base) # 6D notation for orientation
+
                     elif action_name == "gripper": # convert to discrete gripper state (0.0 or 1.0)
                         gripper_cont = v[..., self.action_slices["gripper"]]
                         part = self.gripper_action_continuous2discrete(gripper_cont) 
@@ -234,20 +293,18 @@ class CustomTransforms():
                 future_actions = v_new[:, self.N_history:, :] # (B, N_c, D)
                 sample[k] = future_actions
 
+
         # Manually remove extra length in "action_is_pad" created by LeRobot
         sample["action_is_pad"] = sample["action_is_pad"][:,self.N_history:]
 
         # append past actions to state if requested
         if self.use_past_actions:
             state_ft_name = self.feature_groups["STATE"][0]
-            sample[state_ft_name] = torch.cat([
-                sample[state_ft_name],
-                past_actions,
-            ], dim=-1)
+            sample[state_ft_name] = torch.cat([sample[state_ft_name], past_actions], dim=-1)
 
         # drop unwanted features
         sample = {k: v for k, v in sample.items() if k not in self.skip_features}
 
-        #print("transform", {k:v.shape for k,v in sample.items() if isinstance(v, torch.Tensor)})
+        # print("transform", {k:v.shape for k,v in sample.items() if isinstance(v, torch.Tensor)})
 
         return sample

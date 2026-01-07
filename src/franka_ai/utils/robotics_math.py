@@ -18,18 +18,63 @@ Device = Union[str, torch.device]
 # q dataset/control: (x,y,z,w)
 # q pytorch3D: (w,x,y,z)
 
-# standardize_quaternion
-# quaternion_to_matrix
-# matrix_to_quaternion --> usa standardize
-# axis_angle_to_matrix --> se uso fast=True usa formula diretta, senò passa dai quaternioni
-# matrix_to_axis_angle --> se uso fast=True usa formula diretta, senò passa dai quaternioni
-# axis_angle_to_quaternion --> formule dirette (non usa standardize però)
-# quaternion_to_axis_angle --> formule dirette
-# rotation_6d_to_matrix
-# matrix_to_rotation_6d
-
 
 ### CUSTOM LIBRARY ###
+
+def get_relative_poses_wrt_last_state(pos, R, p_base, R_base):
+    """
+    Transform absolute ee_poses in relative ee_poses wrt last observed state.
+    Applied before feeding the policy.
+
+    Args:
+        pos: (B,N_h/N_c,3)
+        R: (B,N_h/N_c,3,3)
+        p_base: (B,1,3)
+        R_base: (B,1,3,3)
+    """
+    p_rel = torch.matmul(R_base.transpose(-1,-2), (pos - p_base).unsqueeze(-1)).squeeze(-1)
+    R_rel = torch.matmul(R_base.transpose(-1,-2), R)
+    ori_6d = matrix_to_rotation_6d(R_rel) # R → 6D
+
+    part = torch.cat([p_rel, ori_6d], dim=-1)
+
+    return part
+
+
+def get_absolute_pose_wrt_last_state(pos_rel, R_rel, p_base, R_base):
+    """
+    Transform relative ee_pose into absolute ee_pose wrt last observed state.
+    Applied after the policy output, before feeding the controller.
+
+    Args:
+        pos_rel: (3,)
+        R_rel: (3,3)
+        p_base: (3,)
+        R_base: (3,3)
+
+    Returns:
+        part: (7,) -> [x,y,z, qx,qy,qz,qw] (dataset format)
+    """
+
+    # absolute position
+    pos_abs = p_base + R_base @ pos_rel  # (3,)
+
+    # absolute orientation
+    R_abs = R_base @ R_rel               # (3,3)
+
+    # matrix → quaternion (PyTorch3D: wxyz)
+    quat = matrix_to_quaternion(R_abs)
+
+    # normalize (always)
+    quat = normalize_quat(quat)
+
+    # convert to dataset format: xyzw
+    quat = quat[[1, 2, 3, 0]]
+
+    part = torch.cat([pos_abs, quat], dim=-1)
+
+    return part
+
 
 def axis_angle_geodesic_error(a1: torch.Tensor, a2: torch.Tensor) -> torch.Tensor:
     """
@@ -54,13 +99,13 @@ def quaternion_geodesic_error(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tenso
     Returns:
         (...,) tensor of rotation errors in radians
     """
-    # prodotto scalare
+    # Dot product
     dot = torch.sum(q1 * q2, dim=-1)
 
-    # gestisce q ~ -q
+    # Handle q ~ -q
     dot = torch.abs(dot)
 
-    # stabilità numerica
+    # Numerical stability
     dot = torch.clamp(dot, -1.0, 1.0)
 
     return 2.0 * torch.acos(dot)

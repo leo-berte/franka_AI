@@ -4,7 +4,7 @@
 
 training:
 
-  training_steps: 40000    # number of training steps
+  training_steps: 30000    # number of training steps
   log_freq: 100            # logs train loss, gradNorm, lr
   eval_freq: 500           # logs eval loss
   save_ckpt_freq: 10000     # save checkpoints
@@ -31,7 +31,7 @@ policies:
   act:
 
     optimizer:
-      learning_rate: 0.00001
+      learning_rate: 0.00005
       weight_decay: 0.001
     scheduler:
       lr_warmup_steps: 1000 # around 5-10% of training steps

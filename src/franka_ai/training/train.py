@@ -42,7 +42,7 @@ http://localhost:6006/#timeseries
 
 # TODO:
 
-# 1) Check pre-training feature (i.e. When I add Fext in input features for example)
+# 1) Check pre-training feature (i.e. When I add Fext in input features for example or new image)
 
 
  
@@ -69,12 +69,29 @@ def parse_args():
 def train():
 
     """
+        Train or fine-tune a policy on a LeRobot dataset using supervised learning.
 
-    INSERT CLEAN DESCRIPTION
+        This function implements the full training pipeline, including:
+        - Configuration loading for dataset, model and optimization
+        - Dataset and DataLoader construction with temporal histories
+        - Policy initialization from scratch or from a pretrained checkpoint
+        - Loading dataset statistics for feature normalization
+        - Automatic Mixed-Precision training with gradient clipping and LR scheduling
+        - Periodic evaluation, checkpointing and logging
 
-    If pretrained_path is None → train from scratch.
-    If pretrained_path is provided → fine-tune from checkpoint.
-    """
+        Training behavior:
+        - If `pretrained_path` is not provided, a new policy is initialized
+            using dataset-derived input/output feature specifications and
+            aggregated normalization statistics.
+        - If `pretrained_path` is provided, the policy is loaded and fine-tuned
+            from the given checkpoint.
+
+        Optimization details:
+        - Uses AdamW with warmup followed by cosine decay
+        - Supports automatic mixed precision (AMP) on CUDA devices
+        - Logs training and validation metrics to TensorBoard and CSV
+        - Saves periodic checkpoints and tracks the best validation model
+        """
 
     # -------------------
     # INIT FOLDERS & ARGS
@@ -135,7 +152,7 @@ def train():
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         model_cfg=models_cfg[policy_name],
-        # selected_episodes=[0]
+        selected_episodes=[0]
     )
 
     # ---------------------
