@@ -23,13 +23,13 @@ dataset:
 
   features:
     VISUAL:
-      - observation.images.front_cam2
+      - observation.images.front_cam1
     STATE:
       - observation.state
     ACTION:
       - action
     REMOVE:
-      - observation.images.front_cam1
+      - observation.images.front_cam2
       - observation.images.front_cam3
       - observation.images.gripper_camera
       - observation.images.gripper_camera_depth
@@ -80,9 +80,9 @@ transforms:
         translate: [0.05, 0.05]
         p: 0.5
 
-  orientations: 
+  orientations: # used only in ee_pose_absolute, NOT in ee_pose_relative
     type: quaternion # [quaternion, 6D, axis_angle]
-    
+
   state:
     augmentations:
       noise_std_dev:
@@ -94,13 +94,12 @@ transforms:
     # - qdot
     # - tau
     # - fext
-    - ee_pos
-    - ee_ori
+    - ee_pose_absolute
+    - ee_pose_relative 
     - gripper
 
   action:
-    include: # define action components
-    - ee_pos 
-    - ee_ori
+    include: # define action components (it can be ONLY: [ee_pose_absolute, gripper] or [ee_pose_relative, gripper])
+    - ee_pose_relative 
     - gripper
 

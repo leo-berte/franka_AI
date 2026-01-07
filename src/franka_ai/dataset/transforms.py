@@ -5,29 +5,46 @@ import torch
 from franka_ai.utils.robotics_math import *
 
 
-# TODO: 
-
-# per come è ora, se uso in actions ee_rel ma non nello state, si rompe
-# update description of methods/classes in the repo
-
-
-
 class CustomTransforms():
 
     """
+    Build and apply custom transformations to dataset samples for training and inference.
 
-    TO UPDATE
+    Main functionalities include:
 
-    Build and apply custom transformations to dataset samples.
+    - Visual preprocessing:
+        * Image resizing (training and inference)
+        * Optional data augmentations during training (color jitter, blur, affine),
+          applied consistently across the temporal dimension to preserve temporal coherence.
 
-    Includes:
-    - Image preprocessing and augmentations (resize, jitter, affine, blur)
-    - Gaussian noise injection to proprioceptive data (joint positions, velocities, torques)
-    The same transformation or noise injection is applied for every data in the history to mantain temporal correlation.
+    - Proprioceptive state processing:
+        * Selection and concatenation of state features, configurable from dataset.yaml
+        * Optional Gaussian noise injection on joint velocities and torques (training only)
+
+    - Action processing:
+        * Selection and concatenation of action features, configurable from dataset.yaml
+        * Optional inclusion of past actions into the state vector
+
+    - Support for multiple orientation representations (quaternion, axis-angle, 6D)
+
+    - Absolute and relative end-effector poses:
+        * Supports both absolute and relative end-effector pose representations
+        * Relative poses (state and action) are computed with respect to the
+          last observed end-effector pose in the observation history
 
     Args:
-        train: boolean to decide whether to apply training augmentations or inference preprocessing.
-        feature_groups: eature names used in the dataset.
+        dataset_cfg (dict): Dataset configuration containing feature groups, state slices,
+            and action slices.
+
+        transforms_cfg (dict): Configuration for visual, state, and action transformations,
+            including augmentations and feature selection.
+
+        model_cfg (dict): Model configuration specifying temporal parameters such as
+            number of observation steps (N_history) and action chunk size (N_chunk).
+
+        train (bool, optional):
+            If True, enables training-time augmentations and noise injection.
+            If False, applies deterministic preprocessing suitable for inference.
     """
 
     def __init__(self, dataset_cfg, transforms_cfg, model_cfg, train=False):
@@ -138,6 +155,21 @@ class CustomTransforms():
 
         state_parts = []
         action_parts = []
+
+        # In case relative coordinates are used as features, save the base pose wrt which relative poses are computed
+        if "ee_pose_relative" in self.include_states or "ee_pose_relative" in self.include_actions:
+                    
+            # get current ee_abs_pose
+            v = sample[self.feature_groups["STATE"][0]].to(torch.float32)
+            pos = v[..., self.state_slices["ee_pos"]]
+            quat = v[..., self.state_slices["ee_quaternion"]]
+            quat = quat[..., [3,0,1,2]] # Dataset (x,y,z,w) → PyTorch3D (w,x,y,z)
+            # quat = standardize_quaternion(quat)
+            R = quaternion_to_matrix(quat)
+
+            # base = last observed pose --> used both for STATE and ACTION eventually
+            p_base = pos[:, -1:, :]      # (B,1,3)
+            R_base = R[:, -1:, :, :]     # (B,1,3,3)
         
         for k, v in sample.items(): # each sample contains the N_h dimension (but no B dimension)
             
@@ -163,7 +195,7 @@ class CustomTransforms():
 
                 sample[k] = v_aug
 
-            if k in self.feature_groups["STATE"]:
+            elif k in self.feature_groups["STATE"]:
 
                 v = v.to(torch.float32) # convert data to tensor float32
 
@@ -203,10 +235,6 @@ class CustomTransforms():
                         # quat = standardize_quaternion(quat)
                         R = quaternion_to_matrix(quat)
 
-                        # base = last observed pose --> used both for STATE and ACTION
-                        p_base = pos[:, -1:, :]      # (B,1,3)
-                        R_base = R[:, -1:, :, :]     # (B,1,3,3)
-
                         # transform absolute ee_poses in relative ee_poses wrt last observed state
                         part = get_relative_poses_wrt_last_state(pos, R, p_base, R_base) # 6D notation for orientation
 
@@ -220,10 +248,7 @@ class CustomTransforms():
                 v_new = torch.cat(state_parts, dim=-1) # (B, N_h, D)
                 sample[k] = v_new
 
-
-        for k, v in sample.items(): # each sample contains the N_h dimension (but no B dimension)
-
-            if k in self.feature_groups["ACTION"]:
+            elif k in self.feature_groups["ACTION"]:
 
                 v = v.to(torch.float32) # convert data to tensor float32
 

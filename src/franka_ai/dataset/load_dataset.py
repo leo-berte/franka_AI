@@ -19,26 +19,38 @@ def make_dataloader(
     model_cfg=None,
     selected_episodes=None
 ):
-    
+
     """
-    
-    TO UPDATE
-    
     Build PyTorch DataLoaders for training and validation from a LeRobot dataset.
 
-    Handles:
-    - Loading dataset from Hugging Face hub or local path
-    - Building history and future frames (delta_timestamps)
-    - Splitting into training and validation sets
-    - Applying image and proprioceptive transformations
-    - Creating optimized DataLoaders for training
+    This function constructs dataset instances and DataLoaders by:
+      - Loading a LeRobot dataset from a local path or Hugging Face repository
+      - Building temporal histories and future action chunks via delta timestamps
+      - Subsampling observations and actions according to model sampling rates
+      - Splitting episodes into training and validation sets
+      - Creating optimized DataLoaders with reproducible worker behavior
 
     Args:
-        repo_id: Hugging Face repo ID
-        dataseth_path: local dataset root directory
+        repo_id (str, optional): Path or Hugging Face repository ID of the dataset.
+
+        dataset_path (str, optional): Local root directory of the dataset.
+
+        dataloader_cfg (dict): Configuration for DataLoader behavior.
+
+        dataset_cfg (dict): Dataset configuration describing features and state/action layouts.
+
+        model_cfg (dict): Model configuration specifying temporal parameters and sampling rates.
+
+        selected_episodes (list[int], optional): Explicit list of episode indices to use for both training and validation.
 
     Returns:
-        (DataLoader, DataLoader): train and validation dataloaders
+        train_loader (DataLoader): DataLoader for training episodes.
+
+        train_episodes (list[int]): List of episode indices used for training.
+
+        val_loader (DataLoader): DataLoader for validation episodes.
+
+        val_episodes (list[int]): List of episode indices used for validation.
     """
 
     # Extract parameters

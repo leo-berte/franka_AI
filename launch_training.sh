@@ -7,16 +7,8 @@ DATA=/mnt/Data/datasets/lerobot/one_bag
 
 POLICY=act
 
-
-
-# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config test_orientations2/config_abs_aa
-# python src/franka_ai/training/train.py --dataset $DATA --config test_orientations2/config_abs_aa --policy $POLICY
-
-# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config test_orientations2/config_abs_6d
-# python src/franka_ai/training/train.py --dataset $DATA --config test_orientations2/config_abs_6d --policy $POLICY
-
-python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config test_orientations2/config_rel
-python src/franka_ai/training/train.py --dataset $DATA --config test_orientations2/config_rel --policy $POLICY
+python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act1
+python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act1 --policy $POLICY
 
 # python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act2
 # python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act2 --policy $POLICY

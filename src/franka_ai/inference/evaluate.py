@@ -19,7 +19,7 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-01_21-37-20 \
+                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-07_09-13-19 \
                                            --policy act
 
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
@@ -80,6 +80,46 @@ def get_action_buffer_tensor(buffer):
 
 def main():
 
+    """
+    Run offline evaluation of a trained policy on a single dataset episode.
+
+    This function performs a sequential rollout over a dataset episode,
+    emulating closed-loop inference by:
+      - Maintaining an internal action buffer for past actions
+      - Aligning policy inference frequency with the dataset FPS
+      - Applying the same preprocessing pipeline used during training
+      - Respecting the policy's internal chunking and receding-horizon logic
+
+    Key features of the evaluation pipeline:
+
+    - Temporal alignment:
+        * Dataset samples are subsampled to match the policy sampling rate.
+
+    - Past action conditioning:
+        * When enabled, previously predicted actions are injected into the
+          observation state using a fixed-length action buffer.
+
+    - Chunk-based policy execution:
+        * The policy internally handles action chunking and receding-horizon
+          execution via the `select_action` method.
+
+    - Relative end-effector pose handling:
+        * When using relative end-effector actions, the reference (base) pose
+          is captured at chunk boundaries and reused consistently across the
+          corresponding action steps.
+
+    - Action reconstruction:
+        * Policy outputs are converted to the dataset action format (dataset.yaml).
+
+    - Metrics computation:
+        * Position error (L2)
+        * Orientation error (geodesic distance)
+        * Gripper command accuracy
+
+    The resulting predictions are compared against ground-truth dataset
+    actions to assess tracking performance.
+    """
+
     # Get paths
     dataset_path, checkpoint_path, policy_name= parse_args()
 
@@ -96,15 +136,12 @@ def main():
     device = torch.device(dataloader_cfg["device"])
     N_history = model_cfg["params"].get("n_obs_steps") or model_cfg["params"].get("N_history")
     N_chunk = model_cfg["params"].get("horizon") or model_cfg["params"].get("chunk_size") or model_cfg["params"].get("N_chunk")
+    n_action_steps = model_cfg["params"].get("n_action_steps")
     orientation_type = transforms_cfg["orientations"]["type"]
     include_actions = transforms_cfg["action"]["include"]
     state_ranges = dataset_cfg["state_slices"]
     state_slices = {k: slice(v[0], v[1]) for k, v in state_ranges.items()}
     
-    # Consistency checks
-    # if transforms_cfg["state"]["use_past_actions"] == True:
-    #     raise ValueError("Not implemented yet the possibility to use past actions in state.")
-
     # Set params
     dataloader_cfg["batch_size"] = 1
     dataloader_cfg["shuffle"] = False
@@ -146,6 +183,9 @@ def main():
     # Pre-fill past actions
     action_buffer = init_action_buffer(train_loader, N_history)
 
+    # Compute policy steps
+    current_step = 0
+
     # iterate over dataloader
     for step, batch in enumerate(train_loader):
         
@@ -161,7 +201,7 @@ def main():
         batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}            
 
         # Get base pose (last observed pose) to compute ee_pose_relative --> ee_pose_absolute
-        if "ee_pose_relative" in include_actions:
+        if "ee_pose_relative" in include_actions and current_step % n_action_steps == 0:
             p_base = batch["observation.state"][..., state_slices["ee_pos"]][:, -1, :]   # (B,3)
             quat_base = batch["observation.state"][..., state_slices["ee_quaternion"]][:, -1, :]  # (B,4)
             quat_base = quat_base[:, [3,0,1,2]]          # xyzw → wxyz
@@ -202,6 +242,9 @@ def main():
             action = policy.select_action(batch) # (B, D) --> (B, D)
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
             print("step: ", step)
+        
+        # Update policy steps
+        current_step += 1
 
         # Move to CPU
         action = action.squeeze(0).to("cpu")

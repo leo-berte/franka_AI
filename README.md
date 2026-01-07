@@ -1,6 +1,6 @@
 # Franka AI
 
-End-to-end **AI pipeline for robotic manipulation** (covering dataset post-processing, training, and real-time inference) built around fully containerized Docker environments. The project integrates state-of-the-art policies (ACT, Diffusion Policies) through the LeRobot framework, as well as custom flow-matching–based models using action-chunking and hybrid state-vision inputs. It is designed for **real-world logistics applications**, specifically pick-and-place of deformable soft bags using a Franka Panda robot.
+End-to-end **AI pipeline for robotic manipulation** (covering dataset post-processing, training and real-time inference) built around fully containerized Docker environments. The project integrates state-of-the-art policies (ACT, Diffusion Policies) through the LeRobot framework, as well as custom flow-matching–based models using action-chunking and hybrid state-vision inputs. It is designed for **real-world logistics applications**, specifically pick-and-place of deformable soft bags using a Franka Panda robot.
 
 ## 1. Project structure
 
@@ -102,23 +102,25 @@ Computes new dataset statistics after applying the custom transforms. The policy
 python src/franka_ai/dataset/generate_updated_stats.py --dataset /workspace/data/demo1 --config config1
 ```
 
-### 2.3 Test transformed stats
+### 2.3 Train
 
-Compares the original statistics (*episode_stats.jsonl*) with the transformed ones (*episode_stats_transformed.jsonl*) to verify correctness and consistency.
+Starts the training for the selected policy using the specified dataset path. Optionally, you can provide a directory containing pretrained checkpoints.
 
 ```bash
-python src/franka_ai/tests/test_stats.py --dataset /workspace/data/demo1
+python src/franka_ai/training/train.py --dataset /workspace/data/demo1 \
+                                       --pretrained /workspace/outputs/checkpoints/demo1_xxx/model.pt \
+                                       --policy diffusion \
+                                       --config config1
 ```
 
-### 2.4 Train
+### 2.4 Evaluate
 
-Starts training for the selected policy using the specified dataset path. Optionally, you can provide a directory containing pretrained checkpoints.
+Starts the training for the selected policy using the specified dataset path. Optionally, you can provide a directory containing pretrained checkpoints.
 
 ```bash
-python src/franka_ai/training/train.py --dataset /workspace/data/demo1
-                                       --pretrained /workspace/outputs/checkpoints/demo1_xxx/model.pt
-                                       --policy diffusion
-                                       --config config1
+python src/franka_ai/inference/evaluate.py --dataset /workspace/data/demo1 \
+                                           --checkpoint /workspace/outputs/checkpoints/demo1_xxx \
+                                           --policy diffusion
 ```
 
 ## 3. Run inference scripts

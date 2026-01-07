@@ -17,8 +17,8 @@ act:
 
   params:
     n_obs_steps: 1
-    chunk_size: 50   
-    n_action_steps: 25
+    chunk_size: 45   
+    n_action_steps: 20
 
   sampling:
     fps_sampling_hist: 30
