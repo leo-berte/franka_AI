@@ -184,7 +184,7 @@ class CustomTransforms():
 
                 # apply augmentations
                 v_aug = self.img_tf_train(v_flat) if self.train else self.img_tf_inference(v_flat)
-                v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST
+                # v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST
                 
                 # reshape back
                 v_aug = v_aug.reshape(*pre_shape, *v_aug.shape[-3:])
@@ -295,7 +295,8 @@ class CustomTransforms():
 
 
         # Manually remove extra length in "action_is_pad" created by LeRobot
-        sample["action_is_pad"] = sample["action_is_pad"][:,self.N_history:]
+        if self.train:
+            sample["action_is_pad"] = sample["action_is_pad"][:,self.N_history:]
 
         # append past actions to state if requested
         if self.use_past_actions:

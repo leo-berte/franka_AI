@@ -25,8 +25,9 @@ franka_ai/
 │       ├── CMakeLists.txt
 │       ├── launch/
 │       └── src/inference_node.py
-├── Dockerfile.train
-├── Dockerfile.ros
+├── docker/
+│   ├── Dockerfile.train
+│   └── Dockerfile.inference
 └── README.md
 ```
 
@@ -42,13 +43,13 @@ cd franka_ai
 Build docker image:
 
 ```bash
-docker build -t franka_ai_train -f Dockerfile.train .
+docker build -t franka_ai_train -f docker/Dockerfile.train .
 ```
 
 Enter in the container by accessing the new *franka_ai_train* image:
 
 ```bash
-sh docker_run_train.sh
+sh docker/docker_run_train.sh
 ```
 
 ### 1.3 Setup docker for inference
@@ -63,13 +64,13 @@ cd franka_ai
 Build docker image:
 
 ```bash
-docker build -t franka_ai_inference -f Dockerfile.inference .
+docker build -t franka_ai_inference -f docker/Dockerfile.inference .
 ```
 
 Enter in the container by accessing the new *franka_ai_inference* image:
 
 ```bash
-sh docker_run_inference.sh
+sh docker/docker_run_inference.sh
 ```
 
 ### 1.4 Docker requirements

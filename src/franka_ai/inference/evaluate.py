@@ -19,7 +19,7 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-07_09-13-19 \
+                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-07_12-46-30 \
                                            --policy act
 
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \

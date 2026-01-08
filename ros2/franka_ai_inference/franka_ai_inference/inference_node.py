@@ -14,8 +14,10 @@ from collections import deque
 import threading
 import torch
 import numpy as np
+from pathlib import Path
 
 from franka_ai.dataset.transforms import CustomTransforms
+from franka_ai.utils.robotics_math import *
 from franka_ai.dataset.utils import get_configs_dataset, build_delta_timestamps
 from franka_ai.inference.utils import get_configs_inference
 from franka_ai.models.factory import get_policy_class
@@ -23,19 +25,19 @@ from franka_ai.models.utils import get_configs_models
 
 
 """
-Run: 
+Run: ros2 run franka_ai_inference inference_node
 Play rosbag: ros2 bag play bag1.db3
+Run rqt_plot: ros2 run plotjuggler plotjuggler
 """
 
 # TODO:
 
-# Tune controller, Adrien overrride velocity limtis and functions to bring robot in desired initial position
-
-# 0) PAST_ACTIONS viene ricreata da output policy.. creare transofrm_inverse per gestirlo senza riscrivere codice per ogni ablation
-# --> questo viene fatto per observation perchè ricreo STATE del dataset e transformrs poi lo trattano based on yaml
-
+# 0) A cosa serve action pad? Serve per ACT dentro inference? vedi trasnformrs.py
 # 1) build_obs synchronization and feed directly the model observation --> generate_actions(obs) with in:(B, N_hist, D) --> out:(N_chunk, D)
-# 2) traj stitching
+# --> potrei mettere data from callbacks in deques, poi buffers invece riempiti a f_policy ogni volta che chiamo inference (prendo last values from each dequeue)
+# 2) Come essere sicuri che codice funziona? Plotto su rqt_plot output policy Vs rosbag actions (GT) ? --> registro 1 episodio intero e traino su quello
+
+# 3) traj stitching
 
 
 
@@ -46,15 +48,16 @@ class FrankaInference(Node):
         super().__init__('FrankaInference')
 
         # Get configs about inference
-        inference_cfg = get_configs_inference("../workspace/configs/config/inference.yaml")
+        inference_cfg = get_configs_inference("../workspace/configs/test_inference_ros2/config_act/inference.yaml")
 
         # Get parameter values from inference.yaml
-        self.policy_rate = inference_cfg["policy_rate"]
-        self.fps_dataset = inference_cfg["fps_dataset"]
         pretrained_policy_abs_path = inference_cfg["pretrained_policy_abs_path"]
-        configs_dataset_rel_path = inference_cfg["configs_dataset_rel_path"]
-        configs_models_rel_path = inference_cfg["configs_models_rel_path"]        
+        self.fps_dataset = inference_cfg["fps_dataset"]   
         policy_name = inference_cfg["policy_name"]
+
+        # Automatically infer config paths
+        configs_dataset_rel_path = ".." + str(Path(pretrained_policy_abs_path).parent) + "/dataset.yaml"
+        configs_models_rel_path  = ".." + str(Path(pretrained_policy_abs_path).parent) + "/models.yaml"
 
         # Get configs about dataset, training related to the saved checkpoint
         dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(configs_dataset_rel_path)
@@ -65,14 +68,23 @@ class FrankaInference(Node):
         self.device = dataloader_cfg["device"]
         self.N_history = model_cfg["params"].get("n_obs_steps") or model_cfg["params"].get("N_history")
         self.N_chunk = model_cfg["params"].get("horizon") or model_cfg["params"].get("chunk_size") or model_cfg["params"].get("N_chunk")
+        self.n_action_steps = model_cfg["params"].get("n_action_steps")
         self.fps_sampling_hist = model_cfg["sampling"]["fps_sampling_hist"]
         self.fps_sampling_chunk = model_cfg["sampling"]["fps_sampling_chunk"]
+        self.orientation_type = transforms_cfg["orientations"]["type"]
+        self.include_actions = transforms_cfg["action"]["include"]
+        self.state_ranges = dataset_cfg["state_slices"]
+        self.state_slices = {k: slice(v[0], v[1]) for k, v in self.state_ranges.items()}
 
+        # Consistency checks
+        if self.fps_sampling_hist != self.fps_sampling_chunk:
+            raise ValueError("fps_sampling_hist must be the same as fps_sampling_chunk.")
+    
         # Prepare transforms for inference
         self.tf_inference = CustomTransforms(
             dataset_cfg=dataset_cfg,
             transforms_cfg=transforms_cfg,
-            model_cfg=models_cfg[policy_name],
+            model_cfg=model_cfg,
             train=False
         )
 
@@ -82,7 +94,7 @@ class FrankaInference(Node):
         # Protect shared data from concurrent access
         self.buffer_lock = threading.Lock()
 
-        # buffers --> self.buffers = {k: deque(maxlen=self.N_history) for k in self.buffers.keys()}
+        # Init buffers
         self.buffers = {
             "webcam1": deque(maxlen=self.N_history),
             "webcam2": deque(maxlen=self.N_history),
@@ -97,13 +109,12 @@ class FrankaInference(Node):
             "cart_quat_curr": deque(maxlen=self.N_history),
             "gripper_state": deque(maxlen=self.N_history),
             "action": deque(maxlen=self.N_history),
-            # "cart_pos_filtered_command": deque(maxlen=self.N_history),
-            # "cart_ori_filtered_command": deque(maxlen=self.N_history),
-            # "gripper_command": deque(maxlen=self.N_history),
         }
 
         # Params
         self.alpha = 0.05 # filter actions
+        self.p_base = torch.zeros(3) # init
+        self.R_base = torch.eye(3)   # init
 
         # Subscribers
         self.webcam1_sub = self.create_subscription(CompressedImage, '/webcam1/image_raw/compressed', self.webcam1_callback, 10)
@@ -115,24 +126,21 @@ class FrankaInference(Node):
         self.gripper_state_sub = self.create_subscription(GripperWidth, '/panda_gripper/width', self.gripper_state_callback, 10)
         self.fext_sub = self.create_subscription(WrenchStamped, '/cartesian_impedance/f_ext_cart', self.fext_callback, 10)
         self.cart_pose_curr_sub = self.create_subscription(PoseStamped, '/cartesian_impedance/cartesian_pos_curr', self.cart_pose_curr_callback, 10)
-        # self.cart_pose_filtered_action_sub = self.create_subscription(PoseStamped, '/cartesian_impedance/cartesian_pos_des_filt', self.cart_pose_filtered_action_callback, 10)
-        # self.gripper_action_sub = self.create_subscription(GripperWidth, '/panda_gripper/gripper_command', self.gripper_action_callback, 10)
-        
+
         # Publisher
         self.cart_pose_action_pub = self.create_publisher(PoseStamped, '/cartesian_impedance/equilibrium_pose', 10)
         self.gripper_action_pub = self.create_publisher(GripperWidth, '/panda_gripper/gripper_command', 10)
 
         # Timer according to framerate
-        self.timer = self.create_timer(1.0 / self.policy_rate, self.inference_timer)
+        self.timer = self.create_timer(1.0 / self.fps_sampling_chunk, self.inference_timer)
 
         # Load policy
         PolicyClass = get_policy_class(policy_name)
         self.policy = PolicyClass.from_pretrained(pretrained_policy_abs_path)
         self.policy.reset() # reset the policy to prepare for rollout
 
-        # # Extract input features keys
-        # self.policy_input_features_keys = self.policy.config.input_features.keys()
-        # self.dataset_input_features_keys = dataset_cfg["features"]["VISUAL"] + dataset_cfg["features"]["STATE"]
+        # Compute policy steps
+        self.current_step = 0
 
         # Build the delta_timestamps dict for history and future        
         self.delta_timestamps = build_delta_timestamps(dataset_cfg["features"], 
@@ -143,9 +151,6 @@ class FrankaInference(Node):
                                                        self.fps_sampling_chunk)
 
         self.get_logger().info("FrankaInference node initialized successfully")
-
-        ## TEMP ##
-        self.step=1
 
     def webcam1_callback(self, msg):
 
@@ -245,7 +250,7 @@ class FrankaInference(Node):
             # Get current robot state
             curr_pos = self.buffers["cart_pos_curr"][-1][1]
             curr_quat = self.buffers["cart_quat_curr"][-1][1]
-            curr_grip = CustomTransforms.gripper_continuous2discrete(self.buffers["gripper_state"][-1][1])
+            curr_grip = CustomTransforms.gripper_action_continuous2discrete(self.buffers["gripper_state"][-1][1])
             
             # Compose action and add to buffer
             curr_action = curr_pos + curr_quat + [curr_grip]
@@ -255,8 +260,8 @@ class FrankaInference(Node):
 
     def stack_data(self, buffer, is_image=False):
 
-        # [(t0, x0), (t1, x1), (t2, x2)] 
-        # [x0, x1, x2, x2, x2] 
+        # buffer: [(t0, x0), (t1, x1), (t2, x2)] 
+        # processed_buffer: [x0, x1, x2, x2, x2] 
 
         # Get last N_history data + padding
         if len(buffer) < self.N_history:
@@ -320,12 +325,12 @@ class FrankaInference(Node):
             buffer_copies = {k: list(v) for k, v in self.buffers.items()}
 
         # Convert data to tensors and create history
-        data_tensors = {} # (N_history, ...)
+        data_tensors = {} 
         for k, buf in buffer_copies.items():
             is_image = "webcam" in k or "rgb" in k
-            data_tensors[k] = self.stack_data(buf, is_image=is_image)
+            data_tensors[k] = self.stack_data(buf, is_image=is_image) # (B, N_history, ...)
 
-        # Rebuild state vector (N_hist, D) as in original dataset
+        # Rebuild state vector (B, N_hist, D) as in original dataset
         state = torch.cat([
             data_tensors["q"],
             data_tensors["qdot"],
@@ -348,6 +353,15 @@ class FrankaInference(Node):
 
         # Move data to device
         observation = {k: v.to(self.device, non_blocking=True) for k, v in observation.items()}
+        
+        # Get base pose (last observed pose) to compute ee_pose_relative --> ee_pose_absolute
+        if "ee_pose_relative" in self.include_actions and self.current_step % self.n_action_steps == 0:
+            p_base = observation["observation.state"][..., self.state_slices["ee_pos"]][:, -1, :]   # (B,3)
+            quat_base = observation["observation.state"][..., self.state_slices["ee_quaternion"]][:, -1, :]  # (B,4)
+            quat_base = quat_base[:, [3,0,1,2]]          # xyzw → wxyz
+            R_base = quaternion_to_matrix(quat_base)     # (B,3,3)
+            self.p_base = p_base.squeeze(0)
+            self.R_base = R_base.squeeze(0)
 
         # Apply custom transforms
         observation = self.tf_inference.transform(observation) # in/out: (B, N_h, ...)
@@ -355,9 +369,9 @@ class FrankaInference(Node):
         # Remove key "action"
         observation.pop("action", None)
 
-        # PATCH to convert (B,N_hist, ...) in (B, ...) by taking last timestep
+        # Convert (B,N_hist, D) in (B, D) by taking last timestep (input format required by policy)
         for k, v in observation.items():
-            if v.dim() >= 2:
+            if isinstance(v, torch.Tensor) and v.dim() >= 3: 
                 v = v[:, -1, ...].contiguous()
                 observation[k] = v
 
@@ -401,27 +415,57 @@ class FrankaInference(Node):
         with torch.inference_mode():
             action = self.policy.select_action(obs) # (B, D) --> (B, D)
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
-            print("step: ", self.step)
+            print("step: ", self.current_step)
             # print("policy action: ", action)
-            self.step+=1
+
+        # Update policy steps
+        self.current_step += 1
 
         # Move to CPU and convert to numpy
         action = action.squeeze(0).to("cpu")
 
-        # Convert axis-angle to quaternion
-        quat = CustomTransforms.axis_angle2quaternion(action[3:6])
+        action_parts = []
 
-        # Convert gripper in binary {0,1}
-        action[-1] = CustomTransforms.gripper_continuous2discrete(action[-1])
+        for action_name in self.include_actions:
 
-        # Convert tensors to numpy
-        action_np = action.numpy()
-        quat_np = quat.numpy()
+            if action_name == "ee_pose_absolute":
+
+                pos = action[:3]
+
+                if self.orientation_type == "quaternion":
+                    quat = action[3:7]
+                elif self.orientation_type == "axis_angle":
+                    quat = axis_angle_to_quaternion(action[3:6]) 
+                elif self.orientation_type == "6D":
+                    quat = matrix_to_quaternion(rotation_6d_to_matrix(action[3:9]))
+                
+                quat = normalize_quat(quat)
+                # quat = standardize_quaternion(quat) # same result with ON or OFF
+                quat = quat[..., [1,2,3,0]] # PyTorch3D (w,x,y,z) → Dataset (x,y,z,w) 
+
+                part = torch.cat([pos, quat], dim=-1)
+
+            if action_name == "ee_pose_relative":
+                
+                # Get relative poses
+                pos = action[:3]
+                ori_6d = action[3:9]
+                R = rotation_6d_to_matrix(ori_6d)
+                
+                # Transform relative ee_pose in absolute ee_pose wrt last observed state
+                part = get_absolute_pose_wrt_last_state(pos, R, self.p_base.to("cpu"), self.R_base.to("cpu")) # quaternion notation for orientation
+
+            elif action_name == "gripper":
+                action[-1] = CustomTransforms.gripper_action_continuous2discrete(action[-1]) # Convert gripper in binary {0,1}
+                part = action[-1:]
+
+            # Add part to state vector
+            action_parts.append(part)
 
         # Build final action as expected by controller
-        action_pre_tf = np.concatenate([action_np[:3], quat_np, [action_np[-1]]])
+        action_pre_tf = torch.cat(action_parts, dim=-1).numpy()
         print("action policy", action_pre_tf)
-        
+
         # # Get previous action from buffer (take only the action values)
         # prev_action = np.array(self.buffers["action"][-1][1], dtype=np.float32)
         # print("prev_action", prev_action)
@@ -469,58 +513,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-
-
-
-
-    # def build_obs(self):
-        
-    #     # Make a snapshot copy inside lock
-    #     with self.buffer_lock:
-    #         buffer_copies = {k: list(v) for k, v in self.buffers.items()}
-
-    #     # Convert data to tensors and create history
-    #     data_tensors = {} # (N_history, ...)
-    #     for k, buf in buffer_copies.items():
-    #         is_image = "webcam" in k or "rgb" in k
-    #         data_tensors[k] = self.stack_data(buf, is_image=is_image)
-
-    #     # Rebuild state vector (N_hist, D) as in original dataset
-    #     state = torch.cat([
-    #         data_tensors["q"],
-    #         data_tensors["qdot"],
-    #         data_tensors["tau"],
-    #         data_tensors["cart_pos_curr"],
-    #         data_tensors["cart_quat_curr"],
-    #         data_tensors["gripper_state"],
-    #         data_tensors["fext"],                 
-    #     ], dim=-1)
-
-    #     # Create the policy input dictionary as in original dataset
-    #     observation = {
-    #         "observation.state": state,
-    #         "observation.images.front_cam1": data_tensors["webcam1"],
-    #         "observation.images.front_cam2": data_tensors["webcam2"],
-    #         "observation.images.front_cam3": data_tensors["webcam3"],
-    #         "observation.images.gripper_camera": data_tensors["realsense_rgb"],
-    #     }
-
-    #     # Transforms need to include past actions in the state
-    #     observation["action"] = data_tensors["action"]
-
-    #     # Apply custom transforms
-    #     observation = self.tf_inference.transform(observation) 
-
-    #     # Remove key "action"
-    #     observation.pop("action", None)
-
-    #     # PATCH to convert (N_hist, ...) in (1, ...) by taking last timestep
-    #     for k, v in observation.items():
-    #         if v.dim() >= 2:
-    #             v = v[-1, ...].contiguous()
-    #             observation[k] = v.unsqueeze(0)
-
-    #     # Move data to device
-    #     observation = {k: v.to(self.device, non_blocking=True) for k, v in observation.items()}
-
-    #     return observation
