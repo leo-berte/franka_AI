@@ -295,7 +295,7 @@ class CustomTransforms():
 
 
         # Manually remove extra length in "action_is_pad" created by LeRobot
-        if self.train:
+        if "action_is_pad" in sample.keys():
             sample["action_is_pad"] = sample["action_is_pad"][:,self.N_history:]
 
         # append past actions to state if requested

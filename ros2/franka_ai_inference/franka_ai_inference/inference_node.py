@@ -15,6 +15,7 @@ import threading
 import torch
 import numpy as np
 from pathlib import Path
+from math import ceil
 
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.utils.robotics_math import *
@@ -24,21 +25,26 @@ from franka_ai.models.factory import get_policy_class
 from franka_ai.models.utils import get_configs_models
 
 
+# TODO:
+
+# 1) stampa buffer[q] prima e dopo down-sampling per testing + Add feature to handle also: delta_t_action
+# 2) add methods decriptions 
+
+# 0) A cosa serve action pad? Serve per ACT dentro inference? vedi trasnformrs.py
+# 2) Come essere sicuri che codice funziona? Plotto su rqt_plot output policy Vs rosbag actions (GT) ? --> registro 1 episodio intero e traino su quello
+
+# 3) traj stitching
+
+
 """
 Run: ros2 run franka_ai_inference inference_node
 Play rosbag: ros2 bag play bag1.db3
 Run rqt_plot: ros2 run plotjuggler plotjuggler
 """
 
-# TODO:
 
-# 0) A cosa serve action pad? Serve per ACT dentro inference? vedi trasnformrs.py
-# 1) build_obs synchronization and feed directly the model observation --> generate_actions(obs) with in:(B, N_hist, D) --> out:(N_chunk, D)
-# --> potrei mettere data from callbacks in deques, poi buffers invece riempiti a f_policy ogni volta che chiamo inference (prendo last values from each dequeue)
-# 2) Come essere sicuri che codice funziona? Plotto su rqt_plot output policy Vs rosbag actions (GT) ? --> registro 1 episodio intero e traino su quello
-
-# 3) traj stitching
-
+## Set relative path to inference.yaml before running the node ##
+configs_inference_rel_path = "../workspace/configs/test_inference_ros2/config_act/inference.yaml"
 
 
 class FrankaInference(Node):
@@ -48,7 +54,7 @@ class FrankaInference(Node):
         super().__init__('FrankaInference')
 
         # Get configs about inference
-        inference_cfg = get_configs_inference("../workspace/configs/test_inference_ros2/config_act/inference.yaml")
+        inference_cfg = get_configs_inference(configs_inference_rel_path)
 
         # Get parameter values from inference.yaml
         pretrained_policy_abs_path = inference_cfg["pretrained_policy_abs_path"]
@@ -95,20 +101,24 @@ class FrankaInference(Node):
         self.buffer_lock = threading.Lock()
 
         # Init buffers
+        
+        fastest_freq_from_sensors = 90 # joint states frequency [Hz]
+        deque_max_len = int(self.N_history * ceil(fastest_freq_from_sensors/self.fps_sampling_hist) * 1.5) # Add 1.5 as additional 50% margin
+
         self.buffers = {
-            "webcam1": deque(maxlen=self.N_history),
-            "webcam2": deque(maxlen=self.N_history),
-            "webcam3": deque(maxlen=self.N_history),
-            "realsense_rgb": deque(maxlen=self.N_history),
-            "realsense_depth": deque(maxlen=self.N_history),
-            "q": deque(maxlen=self.N_history),
-            "qdot": deque(maxlen=self.N_history),
-            "tau": deque(maxlen=self.N_history),
-            "fext": deque(maxlen=self.N_history),
-            "cart_pos_curr": deque(maxlen=self.N_history),
-            "cart_quat_curr": deque(maxlen=self.N_history),
-            "gripper_state": deque(maxlen=self.N_history),
-            "action": deque(maxlen=self.N_history),
+            "webcam1": deque(maxlen=deque_max_len),
+            "webcam2": deque(maxlen=deque_max_len),
+            "webcam3": deque(maxlen=deque_max_len),
+            "realsense_rgb": deque(maxlen=deque_max_len),
+            "realsense_depth": deque(maxlen=deque_max_len),
+            "q": deque(maxlen=deque_max_len),
+            "qdot": deque(maxlen=deque_max_len),
+            "tau": deque(maxlen=deque_max_len),
+            "fext": deque(maxlen=deque_max_len),
+            "cart_pos_curr": deque(maxlen=deque_max_len),
+            "cart_quat_curr": deque(maxlen=deque_max_len),
+            "gripper_state": deque(maxlen=deque_max_len),
+            "action": deque(maxlen=deque_max_len),
         }
 
         # Params
@@ -258,21 +268,60 @@ class FrankaInference(Node):
 
         return len(self.buffers["action"]) > 0 
 
-    def stack_data(self, buffer, is_image=False):
+    def get_data_at_ref_times(self, reference_times, buffer):
 
-        # buffer: [(t0, x0), (t1, x1), (t2, x2)] 
-        # processed_buffer: [x0, x1, x2, x2, x2] 
+        """
+        reference_times: list of float seconds
+        data: [(ros_time, value), ...] sorted
+        """
 
-        # Get last N_history data + padding
-        if len(buffer) < self.N_history:
-            n_missing = self.N_history - len(buffer)
-            last = buffer[-1] # replicate last item
-            items = list(buffer) + [last] * n_missing
-        else:
-            items = list(buffer)[-self.N_history:]
+        out = []
+        idx = 0
+        times = [t.sec + t.nanosec * 1e-9 for t, _ in buffer] # get absolute data timestamps
+        
+        # Align absolute data timestamps to absolute delta timestamps 
+        for rt in reference_times: 
+            while idx + 1 < len(times) and times[idx + 1] < rt:
+                idx += 1
+            out.append(buffer[idx][1])
 
-        # Extract only data (ignore timestamps)
-        values = [v for (_, v) in items]
+        return out
+
+    def get_buffer_synced(self, buffers):
+
+        # Example 1
+        # buffer: [(t0, x0)] 
+        # buffer (N_hist=3): [(t0, x0), (t0, x0), (t0, x0)] 
+        
+        # Example 2
+        # buffer: [(t0, x0), (t1, x1), (t2, x2), (t3, x3), (t4, x4), (t5, x5), (t6, x6)] 
+        # buffer (N_hist=3): [(t0, x0), (t2, x2), (t6, x6)] 
+
+        # Get current time in ROS
+        t_curr = self.get_clock().now().to_msg()
+        t_curr_sec = t_curr.sec + t_curr.nanosec * 1e-9
+        
+        # Get relative delta timestamps
+        delta_t_state = self.delta_timestamps['observation.state']  
+        delta_t_action = self.delta_timestamps['action'][:self.N_history]
+
+        # Compute absolute delta timestamps
+        ref_times_state = [t_curr_sec + dt for dt in delta_t_state]  
+        # ref_times_action = [t_sec_curr + dt for dt in delta_t_action]  
+        print("self.delta_timestamps['observation.state']: ", self.delta_timestamps['observation.state']  )
+        print("ref_times_state: ", ref_times_state)
+
+        buffer_synced = {}
+
+        # Sub-sample buffers data to align with delta_timestamps
+
+        for k, buf in buffers.items():
+
+            buffer_synced[k] = self.get_data_at_ref_times(ref_times_state, buf)
+
+        return buffer_synced
+
+    def stack_data(self, values, is_image=False):
 
         #  Convert to torch tensors
         if (is_image):
@@ -291,42 +340,19 @@ class FrankaInference(Node):
 
         return stacked_values
 
-    # def get_last_data_at_ref_time(self, reference_times, data_times, data_dict):
-
-    #     indices = []
-    #     idx = 0
-    #     for ref_time in reference_times:
-    #         while idx < len(data_times) - 1 and data_times[idx + 1] <= ref_time:
-    #             idx += 1
-    #         indices.append(idx)
-
-    #     last_data_dict = {}
-    #     for key in data_dict.keys():
-    #         last_data_dict[key] = data_dict[key][indices]
-
-    #     return last_data_dict
-
-    # def get_ref_times(self):
-
-        # ros_timestamp_ref = webcam1_buffer_copy[-1][0]  # last timestamp
-        # t_sec_ref = ros_timestamp_ref.sec + ros_timestamp_ref.nanosec * 1e-9
-
-        # delta_t_state = self.delta_timestamps['observation.state']  
-        # delta_t_action = self.delta_timestamps['action'][:self.N_history]
-
-        # ref_times = [t_sec_ref + dt for dt in delta_t_state]  # compute absolute timestamps
-
-        # self.get_last_data_at_ref_time(ref_times, data_times, data_dict)
-
     def build_obs(self):
         
         # Make a snapshot copy inside lock
         with self.buffer_lock:
             buffer_copies = {k: list(v) for k, v in self.buffers.items()}
 
+        # Sub-sample buffers data to align with delta_timestamps --> len == N_history
+        buffer_synced = self.get_buffer_synced(buffer_copies)
+        print("len(buffer_synced[q]): ", len(buffer_synced["q"]))
+
         # Convert data to tensors and create history
         data_tensors = {} 
-        for k, buf in buffer_copies.items():
+        for k, buf in buffer_synced.items():
             is_image = "webcam" in k or "rgb" in k
             data_tensors[k] = self.stack_data(buf, is_image=is_image) # (B, N_history, ...)
 
@@ -383,11 +409,10 @@ class FrankaInference(Node):
 
         pos_new  = new_action[:3]
         quat_new = new_action[3:7]
-        grip_new = new_action[7]  # unchanged
+        grip_new = new_action[7] 
 
         pos_prev  = prev_action[:3]
         quat_prev = prev_action[3:7]
-        grip_prev = prev_action[7]
 
         # Filter position
         pos_f = self.alpha * pos_new + (1 - self.alpha) * pos_prev
@@ -464,7 +489,7 @@ class FrankaInference(Node):
 
         # Build final action as expected by controller
         action_pre_tf = torch.cat(action_parts, dim=-1).numpy()
-        print("action policy", action_pre_tf)
+        # print("action policy", action_pre_tf)
 
         # # Get previous action from buffer (take only the action values)
         # prev_action = np.array(self.buffers["action"][-1][1], dtype=np.float32)
