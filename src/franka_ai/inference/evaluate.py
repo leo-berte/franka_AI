@@ -178,7 +178,12 @@ def main():
     dataset_meta = LeRobotDatasetMetadata(repo_id=None, root=dataset_path)
     fps_dataset = dataset_meta.fps
     fps_sampling_chunk = model_cfg["sampling"]["fps_sampling_chunk"]
+    fps_sampling_hist = model_cfg["sampling"]["fps_sampling_hist"]
     step_chunk = round(fps_dataset / fps_sampling_chunk)
+
+    # Consistency checks
+    if fps_sampling_hist != fps_sampling_chunk:
+        raise ValueError("fps_sampling_hist must be the same as fps_sampling_chunk.")
 
     # Pre-fill past actions
     action_buffer = init_action_buffer(train_loader, N_history)

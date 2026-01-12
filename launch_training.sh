@@ -25,7 +25,7 @@ POLICY=act
 # python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act6 --policy $POLICY
 
 # python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act7
-python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act7 --policy $POLICY
+# python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act7 --policy $POLICY
 
-# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act8
+python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act8
 python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act8 --policy $POLICY

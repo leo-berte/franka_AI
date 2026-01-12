@@ -2,6 +2,8 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 
 from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import Image
@@ -14,7 +16,6 @@ from collections import deque
 import threading
 import torch
 import numpy as np
-from pathlib import Path
 from math import ceil
 
 from franka_ai.dataset.transforms import CustomTransforms
@@ -27,47 +28,74 @@ from franka_ai.models.utils import get_configs_models
 
 # TODO:
 
-# 1) stampa buffer[q] prima e dopo down-sampling per testing + Add feature to handle also: delta_t_action
-# 2) add methods decriptions 
+# in ros2_webcam node abilitare header!
+# ottimizzare codice build_obs per andare a 30hz
+
+# 0) Come essere sicuri che codice funziona? Plotto su rqt_plot output policy Vs rosbag actions (GT) ? --> registro 1 episodio intero e traino su quello
 
 # 0) A cosa serve action pad? Serve per ACT dentro inference? vedi trasnformrs.py
-# 2) Come essere sicuri che codice funziona? Plotto su rqt_plot output policy Vs rosbag actions (GT) ? --> registro 1 episodio intero e traino su quello
-
-# 3) traj stitching
+# 1) traj stitching
 
 
 """
-Run: ros2 run franka_ai_inference inference_node
-Play rosbag: ros2 bag play bag1.db3
+Run: ros2 run franka_ai_inference inference_node --ros-args -p use_sim_time:=true
+Play rosbag: ros2 bag play bag1.db3 --clock
 Run rqt_plot: ros2 run plotjuggler plotjuggler
 """
 
 
 ## Set relative path to inference.yaml before running the node ##
-configs_inference_rel_path = "../workspace/configs/test_inference_ros2/config_act/inference.yaml"
+checkpoint_rel_path = "../workspace/outputs/checkpoints/Test_B/one_bag_act_2026-01-07_18-28-18"
 
 
 class FrankaInference(Node):
+
+    """
+    ROS2 Node for performing real-time inference on a Franka robot using a pre-trained policy.
+
+    This node subscribes to multiple sensor streams, and tt maintains internal buffers for sensor data 
+    and builds synchronized snapshots of the robot state to feed into a learned policy. 
+    The policy outputs actions for both the end-effector pose and the gripper.
+
+    Features:
+        - Real-time buffering and synchronization of sensor data and past actions according to 'fps_sampling_hist' 
+        - Multi-threaded execution using ReentrantCallbackGroup for subscribers and a
+          MutuallyExclusiveCallbackGroup for inference timer to avoid blocking callbacks
+        - Converts sensor inputs into tensor-based observations compatible with the trained policy
+        - Automatically decompose policy output format (based on dataset.yaml) in the format required by the robot controller
+        - Publishes actions to the robot in ROS2 topics
+
+    Workflow:
+        1. Subscribers append new sensor messages into corresponding buffers.
+        2. Inference timer triggers at `fps_sampling_chunk` Hz.
+        3. On timer callback:
+            a. Checks if buffers are ready.
+            b. Copies and synchronizes buffers to match reference timestamps (according to 'fps_sampling_hist').
+            c. Builds tensor-based observations for policy.
+            d. Runs policy inference to get actions.
+            e. Decompose policy output in the expected robot controller format.
+            f. Optionally smooths actions.
+            g. Publishes actions to robot control topics.
+    """
+
 
     def __init__(self):
 
         super().__init__('FrankaInference')
 
         # Get configs about inference
-        inference_cfg = get_configs_inference(configs_inference_rel_path)
+        inference_cfg = get_configs_inference(f"{checkpoint_rel_path}/inference.yaml")
 
-        # Get parameter values from inference.yaml
-        pretrained_policy_abs_path = inference_cfg["pretrained_policy_abs_path"]
-        self.fps_dataset = inference_cfg["fps_dataset"]   
+        # Get parameter values from inference.yaml  
         policy_name = inference_cfg["policy_name"]
-
-        # Automatically infer config paths
-        configs_dataset_rel_path = ".." + str(Path(pretrained_policy_abs_path).parent) + "/dataset.yaml"
-        configs_models_rel_path  = ".." + str(Path(pretrained_policy_abs_path).parent) + "/models.yaml"
+        offline_test = inference_cfg["offline_test"]
+        self.fps_dataset = inference_cfg["fps_dataset"] 
+        self.alpha = inference_cfg["output_filter_alpha"]
+        self.smooth_output = inference_cfg["smooth_output"]
 
         # Get configs about dataset, training related to the saved checkpoint
-        dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(configs_dataset_rel_path)
-        models_cfg = get_configs_models(configs_models_rel_path)
+        dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(f"{checkpoint_rel_path}/dataset.yaml")
+        models_cfg = get_configs_models(f"{checkpoint_rel_path}/models.yaml")
         model_cfg = models_cfg[policy_name]
 
         # Get parameter values
@@ -122,31 +150,39 @@ class FrankaInference(Node):
         }
 
         # Params
-        self.alpha = 0.05 # filter actions
         self.p_base = torch.zeros(3) # init
         self.R_base = torch.eye(3)   # init
 
-        # Subscribers
-        self.webcam1_sub = self.create_subscription(CompressedImage, '/webcam1/image_raw/compressed', self.webcam1_callback, 10)
-        self.webcam2_sub = self.create_subscription(CompressedImage, '/webcam2/image_raw/compressed', self.webcam2_callback, 10)
-        self.webcam3_sub = self.create_subscription(CompressedImage, '/webcam3/image_raw/compressed', self.webcam3_callback, 10)
-        self.realsense_rgb_sub = self.create_subscription(CompressedImage, '/camera/camera/color/image_raw/compressed', self.realsense_rgb_callback, 10)
-        self.realsense_depth_sub = self.create_subscription(Image, '/camera/camera/depth/image_rect_raw', self.realsense_depth_callback, 10)
-        self.joint_state_sub = self.create_subscription(JointState, '/cartesian_impedance/joint_state', self.joint_state_callback, 10)
-        self.gripper_state_sub = self.create_subscription(GripperWidth, '/panda_gripper/width', self.gripper_state_callback, 10)
-        self.fext_sub = self.create_subscription(WrenchStamped, '/cartesian_impedance/f_ext_cart', self.fext_callback, 10)
-        self.cart_pose_curr_sub = self.create_subscription(PoseStamped, '/cartesian_impedance/cartesian_pos_curr', self.cart_pose_curr_callback, 10)
+        # Enable MultiThreadedExecutor + ReentrantCallbacks to enbale callbacks/timer to be processed without delays
+        self.timer_group = MutuallyExclusiveCallbackGroup()
+        self.sub_group = ReentrantCallbackGroup()
 
+        # Subscribers
+   
+        self.webcam1_sub = self.create_subscription(CompressedImage, '/webcam1/image_raw/compressed', self.webcam1_callback, 10, callback_group=self.sub_group)
+        self.webcam2_sub = self.create_subscription(CompressedImage, '/webcam2/image_raw/compressed', self.webcam2_callback, 10, callback_group=self.sub_group)
+        self.webcam3_sub = self.create_subscription(CompressedImage, '/webcam3/image_raw/compressed', self.webcam3_callback, 10, callback_group=self.sub_group)
+        self.realsense_rgb_sub = self.create_subscription(CompressedImage, '/camera/camera/color/image_raw/compressed', self.realsense_rgb_callback, 10, callback_group=self.sub_group)
+        self.realsense_depth_sub = self.create_subscription(Image, '/camera/camera/depth/image_rect_raw', self.realsense_depth_callback, 10, callback_group=self.sub_group)
+        self.joint_state_sub = self.create_subscription(JointState, '/cartesian_impedance/joint_state', self.joint_state_callback, 10, callback_group=self.sub_group)
+        self.gripper_state_sub = self.create_subscription(GripperWidth, '/panda_gripper/width', self.gripper_state_callback, 10, callback_group=self.sub_group)
+        self.fext_sub = self.create_subscription(WrenchStamped, '/cartesian_impedance/f_ext_cart', self.fext_callback, 10, callback_group=self.sub_group)
+        self.cart_pose_curr_sub = self.create_subscription(PoseStamped, '/cartesian_impedance/cartesian_pos_curr', self.cart_pose_curr_callback, 10, callback_group=self.sub_group)
+        
         # Publisher
-        self.cart_pose_action_pub = self.create_publisher(PoseStamped, '/cartesian_impedance/equilibrium_pose', 10)
-        self.gripper_action_pub = self.create_publisher(GripperWidth, '/panda_gripper/gripper_command', 10)
+
+        cart_pose_action_pub_topic = '/cartesian_impedance/equilibrium_pose' if offline_test == False else '/cartesian_impedance/equilibrium_pose_offline_test'
+        gripper_action_pub_topic = '/panda_gripper/gripper_command' if offline_test == False else '/panda_gripper/gripper_command_offline_test'
+
+        self.cart_pose_action_pub = self.create_publisher(PoseStamped, cart_pose_action_pub_topic, 10)
+        self.gripper_action_pub = self.create_publisher(GripperWidth, gripper_action_pub_topic, 10)
 
         # Timer according to framerate
-        self.timer = self.create_timer(1.0 / self.fps_sampling_chunk, self.inference_timer)
+        self.timer = self.create_timer(1.0 / self.fps_sampling_chunk, self.inference_timer, callback_group=self.timer_group)
 
         # Load policy
         PolicyClass = get_policy_class(policy_name)
-        self.policy = PolicyClass.from_pretrained(pretrained_policy_abs_path)
+        self.policy = PolicyClass.from_pretrained(f"{checkpoint_rel_path}/best_model.pt")
         self.policy.reset() # reset the policy to prepare for rollout
 
         # Compute policy steps
@@ -168,6 +204,8 @@ class FrankaInference(Node):
         rgb = rgb.astype('float32') / 255.0  # convert to float32 and normalize [0, 1]
         with self.buffer_lock:
             self.buffers["webcam1"].append((msg.header.stamp, rgb))
+
+        print("webcam1 header.stamp:", msg.header.stamp)
 
     def webcam2_callback(self, msg):
 
@@ -246,6 +284,16 @@ class FrankaInference(Node):
 
     def ready(self):
 
+        """
+        Check that all sensor buffers have enough data to perform inference.
+        If the action buffer is empty but sufficient state data exists (cartesian
+        position, orientation and gripper state), it initializes the action buffer with the
+        current robot state.
+
+        Returns:
+            bool: True if all required buffers have data, False otherwise.
+        """
+
         # Check all the state buffers have at least 1 element
         for k, buf in self.buffers.items():
             if (k!="action" and len(buf)<=0):
@@ -271,8 +319,19 @@ class FrankaInference(Node):
     def get_data_at_ref_times(self, reference_times, buffer):
 
         """
-        reference_times: list of float seconds
-        data: [(ros_time, value), ...] sorted
+        Retrieve sub-sampled buffer data aligned to a list of reference timestamps.
+
+        For each reference time, the closest previous timestamp in the buffer is selected
+        to create a synchronized list of data points. This ensures that the returned data
+        is temporally aligned with the reference timeline, useful for building historical
+        observations.
+
+        Args:
+            reference_times: List of reference timestamps in seconds.
+            buffer: List of (ros_time, value) tuples, sorted by ros_time.
+
+        Returns:
+            List: List of (ros_time, value) tuples aligned to the reference times.
         """
 
         out = []
@@ -281,35 +340,47 @@ class FrankaInference(Node):
         
         # Align absolute data timestamps to absolute delta timestamps 
         for rt in reference_times: 
-            while idx + 1 < len(times) and times[idx + 1] < rt:
+            while idx + 1 < len(times) and times[idx + 1] <= rt:
                 idx += 1
-            out.append(buffer[idx][1])
+            out.append((buffer[idx][0], buffer[idx][1]))
 
         return out
 
     def get_buffer_synced(self, buffers):
 
-        # Example 1
-        # buffer: [(t0, x0)] 
-        # buffer (N_hist=3): [(t0, x0), (t0, x0), (t0, x0)] 
+        """
+        Align multiple buffers to a common reference timeline based on the current time 
+        and precomputed delta timestamps.
+
+        Args:
+            buffers: Dictionary of buffers to sync, where each key is a sensor name 
+                and each value is a list of (ros_time, value) tuples sorted by timestamp.
+
+        Returns:
+            Dict: Dictionary of buffers aligned to the reference times. Each buffer has 
+                the same length as `delta_timestamps['observation.state']`.
+            
+        Example 1
+        buffer: [(t0, x0)] 
+        buffer (N_hist=3): [(t0, x0), (t0, x0), (t0, x0)] 
         
-        # Example 2
-        # buffer: [(t0, x0), (t1, x1), (t2, x2), (t3, x3), (t4, x4), (t5, x5), (t6, x6)] 
-        # buffer (N_hist=3): [(t0, x0), (t2, x2), (t6, x6)] 
+        Example 2
+        buffer: [(t0, x0), (t1, x1), (t2, x2), (t3, x3), (t4, x4), (t5, x5), (t6, x6)] 
+        buffer (N_hist=3): [(t0, x0), (t2, x2), (t6, x6)] 
+        """
 
         # Get current time in ROS
         t_curr = self.get_clock().now().to_msg()
         t_curr_sec = t_curr.sec + t_curr.nanosec * 1e-9
         
         # Get relative delta timestamps
-        delta_t_state = self.delta_timestamps['observation.state']  
-        delta_t_action = self.delta_timestamps['action'][:self.N_history]
+        delta_t_state = self.delta_timestamps['observation.state']
 
         # Compute absolute delta timestamps
         ref_times_state = [t_curr_sec + dt for dt in delta_t_state]  
-        # ref_times_action = [t_sec_curr + dt for dt in delta_t_action]  
-        print("self.delta_timestamps['observation.state']: ", self.delta_timestamps['observation.state']  )
-        print("ref_times_state: ", ref_times_state)
+
+        print("NON synced deltas: ")
+        self.debug_print_deltatimes(buffers)
 
         buffer_synced = {}
 
@@ -319,9 +390,49 @@ class FrankaInference(Node):
 
             buffer_synced[k] = self.get_data_at_ref_times(ref_times_state, buf)
 
-        return buffer_synced
+        print("synced deltas: ")
+        self.debug_print_deltatimes(buffer_synced)
 
-    def stack_data(self, values, is_image=False):
+        return buffer_synced
+    
+    def debug_print_deltatimes(self, buffers):
+
+        def convert_rostime(ros_time):
+
+            return ros_time.sec + ros_time.nanosec * 1e-9
+        
+        for k,buff in buffers.items():
+
+            deltas = []
+
+            for i in range(1,len(buff)):
+
+                t_end = convert_rostime(buff[i][0])
+                t_start = convert_rostime(buff[i-1][0])
+                deltas.append(1/(t_end-t_start+1E-7))
+            
+            print(f"deltas for {k} [Hz]: ", deltas)
+
+    def stack_data(self, buff, is_image=False):
+
+        """
+        Convert a list of buffered data into a batched torch tensor suitable for policy input.
+
+        This method extracts only the values from a buffer of (timestamp, value) tuples, 
+        converts them to torch tensors, and stacks them along the history dimension. 
+        An additional batch dimension is added as the first dimension (B=1).
+
+        Args:
+            buff: List of tuples (ros_time, value) extracted from a buffer.
+            is_image: If True, treat values as images and permute from HWC to CHW.
+
+        Returns:
+            torch.Tensor: Tensor of shape (B=1, N_history, ...) for scalar/vector data 
+                or (B=1, N_history, C, H, W) for images.
+        """
+
+        # Skip time and extrapolate only data
+        values = [b[1] for b in buff]
 
         #  Convert to torch tensors
         if (is_image):
@@ -341,6 +452,33 @@ class FrankaInference(Node):
         return stacked_values
 
     def build_obs(self):
+
+        """
+        Build a synchronized observation dictionary for the policy network.
+
+        This method performs the following steps:
+        1. Creates a thread-safe snapshot of all current buffers.
+        2. Synchronizes and subsamples each buffer according to precomputed delta timestamps 
+        to ensure the correct temporal alignment for history (N_history).
+        3. Converts buffered data into torch tensors, handling images (HWC → CHW) and scalars/vectors.
+        4. Concatenates joint states, velocities, efforts, end-effector pose, gripper state, and external forces 
+        into a single state tensor of shape (B=1, N_history, D).
+        5. Constructs an observation dictionary with:
+        - `"observation.state"`: concatenated state tensor
+        - `"observation.images.xxx`: synchronized image tensors from multiple cameras
+        - `"action"`: past actions for transforms (removed later)
+        6. Moves all tensors to the configured device.
+        7. If relative end-effector poses are included, computes the base position and rotation 
+        from the last observed state.
+        8. Applies custom transforms (`self.tf_inference.transform`) to match the dataset preprocessing.
+        9. Convert all tensors from (B, N_history, D) → (B, D) 
+        by selecting only the last timestep, as required by the policy 'forward()' format.
+
+        Returns:
+            dict: Observation dictionary ready for policy input. Keys include:
+                - `"observation.state"`: tensor (B, D)
+                - `"observation.images.xxx"`: tensor (B, C, H, W)
+        """
         
         # Make a snapshot copy inside lock
         with self.buffer_lock:
@@ -348,7 +486,6 @@ class FrankaInference(Node):
 
         # Sub-sample buffers data to align with delta_timestamps --> len == N_history
         buffer_synced = self.get_buffer_synced(buffer_copies)
-        print("len(buffer_synced[q]): ", len(buffer_synced["q"]))
 
         # Convert data to tensors and create history
         data_tensors = {} 
@@ -405,6 +542,24 @@ class FrankaInference(Node):
 
     def smooth_action(self, new_action, prev_action):
         
+        """
+        Apply a simple low-pass filter to smooth the robot action.
+
+        This function smooths only the end-effector position and orientation 
+        (quaternion) using an exponential moving average. The gripper command is left unchanged.
+
+        Args:
+            new_action: The new action predicted by the policy, shape (8,):
+                [pos_x, pos_y, pos_z, quat_x, quat_y, quat_z, quat_w, gripper]
+            prev_action: The previous action applied, same shape as `new_action`.
+
+        Returns:
+            np.ndarray: The filtered action, same shape as input (8,). Position and quaternion
+                        components are smoothed, quaternion is renormalized to maintain unit norm,
+                        gripper command is directly copied from `new_action`.
+
+        """
+            
         # Split components
 
         pos_new  = new_action[:3]
@@ -429,12 +584,30 @@ class FrankaInference(Node):
 
     def inference_timer(self):
 
+        """
+        This method is called periodically according to `self.fps_sampling_chunk`. It performs the following steps:
+
+        1. Checks if all required buffers have data (self.ready()).
+        2. Builds the observation from buffers (self.build_obs()).
+        3. Runs policy inference to compute the next action.
+        4. Processes action components (ee_pose_absolute/relative, gripper).
+        5. Saves the action in the buffer and publishes it as ROS messages.
+        """
+
         # Wait at least 1 data for each buffer
         if (not(self.ready())):
             return
 
+        # Profile time
+        t0 = self.get_clock().now()
+
         # Build observation
         obs = self.build_obs()
+
+        # Measure time to build observations
+        t1 = self.get_clock().now()  
+        dt1 = (t1 - t0).nanoseconds * 1e-9  # in seconds
+        print(f"Build observations time: {dt1*1000:.2f} ms")
 
         # Inference
         with torch.inference_mode():
@@ -442,6 +615,11 @@ class FrankaInference(Node):
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
             print("step: ", self.current_step)
             # print("policy action: ", action)
+
+        # Measure time for inference
+        t2 = self.get_clock().now()  
+        dt2 = (t2 - t1).nanoseconds * 1e-9  # in seconds
+        print(f"Inference time: {dt2*1000:.2f} ms")
 
         # Update policy steps
         self.current_step += 1
@@ -490,14 +668,17 @@ class FrankaInference(Node):
         # Build final action as expected by controller
         action_pre_tf = torch.cat(action_parts, dim=-1).numpy()
         # print("action policy", action_pre_tf)
+        
+        # Eventually smooth policy output
+        if self.smooth_output == True:
 
-        # # Get previous action from buffer (take only the action values)
-        # prev_action = np.array(self.buffers["action"][-1][1], dtype=np.float32)
-        # print("prev_action", prev_action)
+            # Get previous action from buffer (take only the action values)
+            prev_action = np.array(self.buffers["action"][-1][1], dtype=np.float32)
+            # print("prev_action", prev_action)
 
-        # # Filter action
-        # action_pre_tf = self.smooth_action(action_pre_tf, prev_action)
-        # print("action policy filtered and applied", action_pre_tf)
+            # Filter action
+            action_pre_tf = self.smooth_action(action_pre_tf, prev_action)
+            # print("action policy filtered and applied", action_pre_tf)
 
         # Save action in buffer safely
         with self.buffer_lock:
@@ -526,15 +707,21 @@ class FrankaInference(Node):
         self.gripper_action_pub.publish(gripper_msg)
 
 
-
 def main(args=None):
 
     rclpy.init(args=args)
     node = FrankaInference()
-    rclpy.spin(node)
-    node.cap.release()
-    node.destroy_node()
-    rclpy.shutdown()
+
+    # MultiThreadedExecutor
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
+
+    try:
+        executor.spin()
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

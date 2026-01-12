@@ -1,12 +1,7 @@
-# ---------
-# INFERENCE
-# ---------
-
 inference:
+  offline_test: True
+  smooth_output: False
+  output_filter_alpha: 0.05
+  policy_name: act
+  fps_dataset: 30.0
 
-  # docker paths
-  pretrained_policy_abs_path: "/workspace/outputs/checkpoints/Test_B/one_bag_act_2026-01-07_18-28-18/best_model.pt"
-
-  # general params
-  fps_dataset: 29.995 # it must be the fps got from the dataset (info.json) used for training
-  policy_name: "act" # [diffusion, act]

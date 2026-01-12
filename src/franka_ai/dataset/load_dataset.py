@@ -32,24 +32,16 @@ def make_dataloader(
 
     Args:
         repo_id (str, optional): Path or Hugging Face repository ID of the dataset.
-
         dataset_path (str, optional): Local root directory of the dataset.
-
         dataloader_cfg (dict): Configuration for DataLoader behavior.
-
         dataset_cfg (dict): Dataset configuration describing features and state/action layouts.
-
         model_cfg (dict): Model configuration specifying temporal parameters and sampling rates.
-
         selected_episodes (list[int], optional): Explicit list of episode indices to use for both training and validation.
 
     Returns:
         train_loader (DataLoader): DataLoader for training episodes.
-
         train_episodes (list[int]): List of episode indices used for training.
-
         val_loader (DataLoader): DataLoader for validation episodes.
-
         val_episodes (list[int]): List of episode indices used for validation.
     """
 

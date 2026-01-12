@@ -109,6 +109,7 @@ def train():
     train_cfg, policies_cfg = get_configs_training(f"configs/{config_folder}/train.yaml")
     models_cfg = get_configs_models(f"configs/{config_folder}/models.yaml")
     policy_cfg = policies_cfg[policy_name]
+    model_cfg = models_cfg[policy_name]
 
     # Get folders to save weights and tensorboard logs
     checkpoints_dir, tensorboard_dir, tsbrd_writer = set_output_folders_train(policy_name, dataset_path, config_folder)
@@ -137,21 +138,23 @@ def train():
         raise ValueError("save_ckpt_freq must be >= eval_freq and a multiple of it")
     if training_steps % save_ckpt_freq != 0:
         raise ValueError("training_steps must be a multiple of save_ckpt_freq to ensure final evaluation alignment")
+    if model_cfg["sampling"]["fps_sampling_hist"] != model_cfg["sampling"]["fps_sampling_chunk"]:
+        raise ValueError("fps_sampling_hist must be the same as fps_sampling_chunk.")
 
     # Eventually freeze seed for reproducibility
     if seed_val is not None and seed_val >= 0:
         seed_everything(seed_val)
 
     # Prepare transforms for training, inference and for computing dataset stats
-    transforms_train = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=True)
-    transforms_val = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=False)
+    transforms_train = CustomTransforms(dataset_cfg, transforms_cfg, model_cfg, train=True)
+    transforms_val = CustomTransforms(dataset_cfg, transforms_cfg, model_cfg, train=False)
 
     # Create loaders
     train_loader, train_ep, val_loader, val_ep = make_dataloader(
         dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
-        model_cfg=models_cfg[policy_name],
+        model_cfg=model_cfg,
         # selected_episodes=[0]
     )
 
@@ -185,7 +188,7 @@ def train():
             input_features=input_features,
             output_features=output_features,
             normalization_mapping=normalization_mapping,
-            **models_cfg[policy_name]["params"]
+            **model_cfg["params"]
         )
 
         # Get episodes stats
