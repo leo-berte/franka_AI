@@ -167,7 +167,7 @@ def main():
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         model_cfg=model_cfg,
-        selected_episodes=[0]
+        selected_episodes=[0] # with seed=50 --> idx=10 val_set, idx=0 train_set
     )
 
     # Save data

@@ -17,6 +17,7 @@ import threading
 import torch
 import numpy as np
 from math import ceil
+import time
 
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.utils.robotics_math import *
@@ -29,7 +30,7 @@ from franka_ai.models.utils import get_configs_models
 # TODO:
 
 # in ros2_webcam node abilitare header!
-# ottimizzare codice build_obs per andare a 30hz
+# capire perche gripper state e action non stanno a 30hz nei synced deltas
 
 # 0) Come essere sicuri che codice funziona? Plotto su rqt_plot output policy Vs rosbag actions (GT) ? --> registro 1 episodio intero e traino su quello
 
@@ -45,7 +46,7 @@ Run rqt_plot: ros2 run plotjuggler plotjuggler
 
 
 ## Set relative path to inference.yaml before running the node ##
-checkpoint_rel_path = "../workspace/outputs/checkpoints/Test_B/one_bag_act_2026-01-07_18-28-18"
+checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/one_bag_act_2026-01-07_18-28-18"
 
 
 class FrankaInference(Node):
@@ -134,11 +135,11 @@ class FrankaInference(Node):
         deque_max_len = int(self.N_history * ceil(fastest_freq_from_sensors/self.fps_sampling_hist) * 1.5) # Add 1.5 as additional 50% margin
 
         self.buffers = {
-            "webcam1": deque(maxlen=deque_max_len),
-            "webcam2": deque(maxlen=deque_max_len),
-            "webcam3": deque(maxlen=deque_max_len),
-            "realsense_rgb": deque(maxlen=deque_max_len),
-            "realsense_depth": deque(maxlen=deque_max_len),
+            "webcam1": deque(maxlen=deque_max_len),         # (H,W,C)
+            "webcam2": deque(maxlen=deque_max_len),         # (H,W,C)
+            "webcam3": deque(maxlen=deque_max_len),         # (H,W,C)
+            "realsense_rgb": deque(maxlen=deque_max_len),   # (H,W,C)
+            "realsense_depth": deque(maxlen=deque_max_len), # (H,W)
             "q": deque(maxlen=deque_max_len),
             "qdot": deque(maxlen=deque_max_len),
             "tau": deque(maxlen=deque_max_len),
@@ -201,30 +202,26 @@ class FrankaInference(Node):
     def webcam1_callback(self, msg):
 
         rgb = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='rgb8') # convert to RGB to match dataset format
-        rgb = rgb.astype('float32') / 255.0  # convert to float32 and normalize [0, 1]
         with self.buffer_lock:
             self.buffers["webcam1"].append((msg.header.stamp, rgb))
 
-        print("webcam1 header.stamp:", msg.header.stamp)
+        # print("webcam1 header.stamp:", msg.header.stamp)
 
     def webcam2_callback(self, msg):
 
         rgb = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='rgb8') # convert to RGB to match dataset format
-        rgb = rgb.astype('float32') / 255.0  # convert to float32 and normalize [0, 1]
         with self.buffer_lock:
             self.buffers["webcam2"].append((msg.header.stamp, rgb))
 
     def webcam3_callback(self, msg):
 
         rgb = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='rgb8') # convert to RGB to match dataset format
-        rgb = rgb.astype('float32') / 255.0  # convert to float32 and normalize [0, 1]
         with self.buffer_lock:
             self.buffers["webcam3"].append((msg.header.stamp, rgb))
 
     def realsense_rgb_callback(self, msg):
 
         rgb = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='rgb8') # convert to RGB to match dataset format
-        rgb = rgb.astype('float32') / 255.0  # convert to float32 and normalize [0, 1]
         with self.buffer_lock:
             self.buffers["realsense_rgb"].append((msg.header.stamp, rgb))
 
@@ -232,7 +229,7 @@ class FrankaInference(Node):
 
         # Depth is a 16-bit uint image; convert to float32 meters
         depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')  
-        depth = depth.astype('float32')
+        # depth = depth.astype('float32')
 
         # # Replace invalid values (0 or NaN) with last valid or 0 + normalize ??
         # depth[depth <= 0] = 0.0
@@ -394,27 +391,9 @@ class FrankaInference(Node):
         self.debug_print_deltatimes(buffer_synced)
 
         return buffer_synced
-    
-    def debug_print_deltatimes(self, buffers):
-
-        def convert_rostime(ros_time):
-
-            return ros_time.sec + ros_time.nanosec * 1e-9
-        
-        for k,buff in buffers.items():
-
-            deltas = []
-
-            for i in range(1,len(buff)):
-
-                t_end = convert_rostime(buff[i][0])
-                t_start = convert_rostime(buff[i-1][0])
-                deltas.append(1/(t_end-t_start+1E-7))
-            
-            print(f"deltas for {k} [Hz]: ", deltas)
 
     def stack_data(self, buff, is_image=False):
-
+        
         """
         Convert a list of buffered data into a batched torch tensor suitable for policy input.
 
@@ -431,25 +410,23 @@ class FrankaInference(Node):
                 or (B=1, N_history, C, H, W) for images.
         """
 
-        # Skip time and extrapolate only data
-        values = [b[1] for b in buff]
+        if is_image: # (include here also depth image eventually)
+            # Convert to tensors and stack images to: (1, N_history, H, W, C)
+            tensor_values = torch.stack([torch.from_numpy(b[1]).pin_memory() for b in buff], dim=0).unsqueeze(0)
 
-        #  Convert to torch tensors
-        if (is_image):
-            tensor_values = [torch.from_numpy(v).float() for v in values]
-            tensor_values = [v.permute(2, 0, 1).contiguous() for v in tensor_values] # permute images from HWC to CHW
+            # Move to device
+            tensor_values = tensor_values.to(self.device, non_blocking=True)
+
+            # Convert from HWC to CHW + convert from uint8 to float32 + normalize [0, 1]
+            tensor_values = tensor_values.permute(0, 1, 4, 2, 3).float() / 255.0
         else:
-            tensor_values = []
-            for v in values:  
-                t = torch.tensor(v, dtype=torch.float32)
-                if t.dim() == 0:
-                    t = t.unsqueeze(0)  # make scalar into 1D tensor
-                tensor_values.append(t)
+            # Convert to tensors: (1, N_history, ..)
+            tensor_values = torch.stack([torch.as_tensor(b[1], dtype=torch.float32).flatten().pin_memory() for b in buff], dim=0).unsqueeze(0)
 
-        # Stack to (N_history, ... ) + add B dimension
-        stacked_values = torch.stack(tensor_values, dim=0).unsqueeze(0)
+            # Move to device
+            tensor_values = tensor_values.to(self.device, non_blocking=True)
 
-        return stacked_values
+        return tensor_values
 
     def build_obs(self):
 
@@ -460,18 +437,15 @@ class FrankaInference(Node):
         1. Creates a thread-safe snapshot of all current buffers.
         2. Synchronizes and subsamples each buffer according to precomputed delta timestamps 
         to ensure the correct temporal alignment for history (N_history).
-        3. Converts buffered data into torch tensors, handling images (HWC → CHW) and scalars/vectors.
-        4. Concatenates joint states, velocities, efforts, end-effector pose, gripper state, and external forces 
-        into a single state tensor of shape (B=1, N_history, D).
-        5. Constructs an observation dictionary with:
+        3. Converts buffered data into torch tensors + move data to device.
+        4. Constructs an observation dictionary with:
         - `"observation.state"`: concatenated state tensor
         - `"observation.images.xxx`: synchronized image tensors from multiple cameras
         - `"action"`: past actions for transforms (removed later)
-        6. Moves all tensors to the configured device.
-        7. If relative end-effector poses are included, computes the base position and rotation 
+        5. If relative end-effector poses are included, computes the base position and rotation 
         from the last observed state.
-        8. Applies custom transforms (`self.tf_inference.transform`) to match the dataset preprocessing.
-        9. Convert all tensors from (B, N_history, D) → (B, D) 
+        6. Applies custom transforms (`self.tf_inference.transform`) to match the dataset preprocessing.
+        7. Convert all tensors from (B, N_history, D) → (B, D) 
         by selecting only the last timestep, as required by the policy 'forward()' format.
 
         Returns:
@@ -480,6 +454,9 @@ class FrankaInference(Node):
                 - `"observation.images.xxx"`: tensor (B, C, H, W)
         """
         
+        # Profile time to sync buffer
+        t0 = time.perf_counter()
+        
         # Make a snapshot copy inside lock
         with self.buffer_lock:
             buffer_copies = {k: list(v) for k, v in self.buffers.items()}
@@ -487,11 +464,22 @@ class FrankaInference(Node):
         # Sub-sample buffers data to align with delta_timestamps --> len == N_history
         buffer_synced = self.get_buffer_synced(buffer_copies)
 
+        # Profile time to sync buffer
+        t1 = time.perf_counter()
+        print(f"[Build obs] sync: {(t1-t0)*1000:.3f} ms")
+
+        # Profile time to stack buffers
+        t0 = time.perf_counter()
+
         # Convert data to tensors and create history
         data_tensors = {} 
         for k, buf in buffer_synced.items():
             is_image = "webcam" in k or "rgb" in k
             data_tensors[k] = self.stack_data(buf, is_image=is_image) # (B, N_history, ...)
+
+        # Profile time to stack buffers
+        t1 = time.perf_counter()
+        print(f"[Build obs] stack: {(t1-t0)*1000:.3f} ms")
 
         # Rebuild state vector (B, N_hist, D) as in original dataset
         state = torch.cat([
@@ -514,9 +502,6 @@ class FrankaInference(Node):
             "action": data_tensors["action"] # transforms need to include past actions in the state
         }
 
-        # Move data to device
-        observation = {k: v.to(self.device, non_blocking=True) for k, v in observation.items()}
-        
         # Get base pose (last observed pose) to compute ee_pose_relative --> ee_pose_absolute
         if "ee_pose_relative" in self.include_actions and self.current_step % self.n_action_steps == 0:
             p_base = observation["observation.state"][..., self.state_slices["ee_pos"]][:, -1, :]   # (B,3)
@@ -525,9 +510,17 @@ class FrankaInference(Node):
             R_base = quaternion_to_matrix(quat_base)     # (B,3,3)
             self.p_base = p_base.squeeze(0)
             self.R_base = R_base.squeeze(0)
-
+        
+        # Profile time for transforms
+        t0 = time.perf_counter()
+            
         # Apply custom transforms
         observation = self.tf_inference.transform(observation) # in/out: (B, N_h, ...)
+
+        # Profile time for transforms
+        torch.cuda.synchronize()
+        t1 = time.perf_counter()
+        print(f"[Build obs] transforms: {(t1-t0)*1000:.3f} ms")
 
         # Remove key "action"
         observation.pop("action", None)
@@ -598,16 +591,19 @@ class FrankaInference(Node):
         if (not(self.ready())):
             return
 
-        # Profile time
-        t0 = self.get_clock().now()
+        # Profile time to build observation
+        t0 = time.perf_counter()
 
         # Build observation
         obs = self.build_obs()
 
-        # Measure time to build observations
-        t1 = self.get_clock().now()  
-        dt1 = (t1 - t0).nanoseconds * 1e-9  # in seconds
-        print(f"Build observations time: {dt1*1000:.2f} ms")
+        # Profile time to build observation
+        torch.cuda.synchronize()
+        t1 = time.perf_counter()
+        print(f"[Timer] build obs: {(t1-t0)*1000:.3f} ms")
+
+        # Profile time for inference
+        t0 = time.perf_counter()
 
         # Inference
         with torch.inference_mode():
@@ -616,10 +612,10 @@ class FrankaInference(Node):
             print("step: ", self.current_step)
             # print("policy action: ", action)
 
-        # Measure time for inference
-        t2 = self.get_clock().now()  
-        dt2 = (t2 - t1).nanoseconds * 1e-9  # in seconds
-        print(f"Inference time: {dt2*1000:.2f} ms")
+        # Profile time for inference
+        torch.cuda.synchronize()
+        t1 = time.perf_counter()
+        print(f"[Timer] inference: {(t1-t0)*1000:.3f} ms")
 
         # Update policy steps
         self.current_step += 1
@@ -705,6 +701,26 @@ class FrankaInference(Node):
 
         # Publish
         self.gripper_action_pub.publish(gripper_msg)
+
+    ## HELPERS ##
+     
+    def debug_print_deltatimes(self, buffers):
+
+        def convert_rostime(ros_time):
+
+            return ros_time.sec + ros_time.nanosec * 1e-9
+        
+        for k,buff in buffers.items():
+
+            deltas = []
+
+            for i in range(1,len(buff)):
+
+                t_end = convert_rostime(buff[i][0])
+                t_start = convert_rostime(buff[i-1][0])
+                deltas.append(1/(t_end-t_start+1E-7))
+            
+            print(f"deltas for {k} [Hz]: ", deltas)
 
 
 def main(args=None):

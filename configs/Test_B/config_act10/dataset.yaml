@@ -24,12 +24,12 @@ dataset:
   features:
     VISUAL:
       - observation.images.front_cam1
+      - observation.images.front_cam2
     STATE:
       - observation.state
     ACTION:
       - action
     REMOVE:
-      - observation.images.front_cam2
       - observation.images.front_cam3
       - observation.images.gripper_camera
       - observation.images.gripper_camera_depth
@@ -100,6 +100,5 @@ transforms:
 
   action:
     include: # define action components (it can be ONLY: [ee_pose_absolute, gripper] or [ee_pose_relative, gripper])
-    - ee_pose_absolute 
+    - ee_pose_absolute
     - gripper
-

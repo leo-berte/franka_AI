@@ -86,6 +86,7 @@ def make_dataloader(
         num_val_episodes = int(num_episodes * val_split_ratio)
         train_episodes = episode_ids[:num_train_episodes] 
         val_episodes = episode_ids[num_train_episodes:num_train_episodes + num_val_episodes]
+        print("Train episodes indeces: ", train_episodes)
 
     # Load the raw dataset (hub or local)
     train_ds = LeRobotDatasetPatch(
@@ -111,8 +112,11 @@ def make_dataloader(
     # fix seed for reproducibility
     if seed_val is not None and seed_val >= 0:
         worker_fn = make_worker_init_fn(seed_val)
+        g = torch.Generator()
+        g.manual_seed(seed_val)
     else:
         worker_fn = None   
+        g = torch.Generator()
 
     # Wrap in DataLoaders
 
@@ -123,21 +127,22 @@ def make_dataloader(
         num_workers=num_workers, # number of CPU processes that load data in parallel
         pin_memory=device.type!="cpu", # allocate CPU memory as pinned for faster CPU to GPU transfers
         prefetch_factor=prefetch_factor, # each worker preloads 2 batches ahead
-        persistent_workers=True, # keep workers alive between epochs 
+        persistent_workers=False, # keep workers alive between epochs 
         worker_init_fn=worker_fn, # ensures each worker has a reproducible deterministic seed
+        generator=g, # ensures shuffle=True has a reproducible deterministic seed
         drop_last=True # if the total number of samples is not divisible by batch_size, the last incomplete batch is dropped
     )
 
     val_loader = DataLoader(
         val_ds,
         batch_size=batch_size,
-        shuffle=shuffle,
+        shuffle=False,
         num_workers=num_workers,
         pin_memory=device.type!="cpu",
         prefetch_factor=prefetch_factor,
-        persistent_workers=True,
+        persistent_workers=False,
         worker_init_fn=worker_fn,
-        drop_last=True            
+        drop_last=True
     )
 
     return train_loader, train_episodes, val_loader, val_episodes

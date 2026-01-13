@@ -11,7 +11,7 @@ dataloader:
   num_workers: 4
   prefetch_factor: 2
   device: "cuda"
-  seed_val: -1 # -1 means no fixed seed
+  seed_val: 50 # -1 means no fixed seed
   print_ds_info: True 
 
 
@@ -100,6 +100,5 @@ transforms:
 
   action:
     include: # define action components (it can be ONLY: [ee_pose_absolute, gripper] or [ee_pose_relative, gripper])
-    - ee_pose_relative 
+    - ee_pose_relative
     - gripper
-
