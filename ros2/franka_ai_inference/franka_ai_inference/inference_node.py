@@ -146,9 +146,10 @@ class FrankaInference(Node):
             "fext": deque(maxlen=deque_max_len),
             "cart_pos_curr": deque(maxlen=deque_max_len),
             "cart_quat_curr": deque(maxlen=deque_max_len),
-            "gripper_state": deque(maxlen=deque_max_len),
-            "action": deque(maxlen=deque_max_len),
+            "gripper_state": deque(maxlen=deque_max_len)
         }
+
+        self.buffer_past_actions = deque(maxlen=self.N_history)
 
         # Params
         self.p_base = torch.zeros(3) # init
@@ -179,7 +180,8 @@ class FrankaInference(Node):
         self.gripper_action_pub = self.create_publisher(GripperWidth, gripper_action_pub_topic, 10)
 
         # Timer according to framerate
-        self.timer = self.create_timer(1.0 / self.fps_sampling_chunk, self.inference_timer, callback_group=self.timer_group)
+        self.dt_inference = 1.0 / self.fps_sampling_chunk
+        self.timer = self.create_timer(self.dt_inference, self.inference_timer, callback_group=self.timer_group)
 
         # Load policy
         PolicyClass = get_policy_class(policy_name)
@@ -197,15 +199,13 @@ class FrankaInference(Node):
                                                        self.fps_sampling_hist, 
                                                        self.fps_sampling_chunk)
 
-        self.get_logger().info("FrankaInference node initialized successfully")
+        print("FrankaInference node initialized successfully")
 
     def webcam1_callback(self, msg):
 
         rgb = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='rgb8') # convert to RGB to match dataset format
         with self.buffer_lock:
             self.buffers["webcam1"].append((msg.header.stamp, rgb))
-
-        # print("webcam1 header.stamp:", msg.header.stamp)
 
     def webcam2_callback(self, msg):
 
@@ -297,7 +297,7 @@ class FrankaInference(Node):
                 return False
             
         # Eventually initialize action buffer with current robot state
-        if len(self.buffers["action"]) <= 0 \
+        if len(self.buffer_past_actions) <= 0 \
             and len(self.buffers["cart_pos_curr"]) > 0 \
             and len(self.buffers["cart_quat_curr"]) > 0 \
             and len(self.buffers["gripper_state"]) > 0:
@@ -309,9 +309,9 @@ class FrankaInference(Node):
             
             # Compose action and add to buffer
             curr_action = curr_pos + curr_quat + [curr_grip]
-            self.buffers["action"].append((self.get_clock().now().to_msg(), curr_action))
+            self.buffer_past_actions.append(curr_action)
 
-        return len(self.buffers["action"]) > 0 
+        return len(self.buffer_past_actions) > 0 
 
     def get_data_at_ref_times(self, reference_times, buffer):
 
@@ -376,8 +376,8 @@ class FrankaInference(Node):
         # Compute absolute delta timestamps
         ref_times_state = [t_curr_sec + dt for dt in delta_t_state]  
 
-        print("NON synced deltas: ")
-        self.debug_print_deltatimes(buffers)
+        # print("NON synced deltas: ")
+        # self.debug_print_deltatimes(buffers)
 
         buffer_synced = {}
 
@@ -387,12 +387,12 @@ class FrankaInference(Node):
 
             buffer_synced[k] = self.get_data_at_ref_times(ref_times_state, buf)
 
-        print("synced deltas: ")
-        self.debug_print_deltatimes(buffer_synced)
+        # print("synced deltas: ")
+        # self.debug_print_deltatimes(buffer_synced)
 
         return buffer_synced
 
-    def stack_data(self, buff, is_image=False):
+    def stack_data(self, k, buff):
         
         """
         Convert a list of buffered data into a batched torch tensor suitable for policy input.
@@ -409,20 +409,27 @@ class FrankaInference(Node):
             torch.Tensor: Tensor of shape (B=1, N_history, ...) for scalar/vector data 
                 or (B=1, N_history, C, H, W) for images.
         """
-
-        if is_image: # (include here also depth image eventually)
+        
+        if "webcam" in k or "rgb" in k: # (include here also depth image eventually)
+            
             # Convert to tensors and stack images to: (1, N_history, H, W, C)
             tensor_values = torch.stack([torch.from_numpy(b[1]).pin_memory() for b in buff], dim=0).unsqueeze(0)
-
+            # Move to device
+            tensor_values = tensor_values.to(self.device, non_blocking=True)
+            # Convert from HWC to CHW + convert from uint8 to float32 + normalize [0, 1]
+            tensor_values = tensor_values.permute(0, 1, 4, 2, 3).float() / 255.0
+        
+        elif k=="action":
+            
+            # Convert to tensors: (1, N_history, ..)
+            tensor_values = torch.stack([torch.as_tensor(b, dtype=torch.float32).flatten().pin_memory() for b in buff], dim=0).unsqueeze(0)
             # Move to device
             tensor_values = tensor_values.to(self.device, non_blocking=True)
 
-            # Convert from HWC to CHW + convert from uint8 to float32 + normalize [0, 1]
-            tensor_values = tensor_values.permute(0, 1, 4, 2, 3).float() / 255.0
         else:
+            
             # Convert to tensors: (1, N_history, ..)
             tensor_values = torch.stack([torch.as_tensor(b[1], dtype=torch.float32).flatten().pin_memory() for b in buff], dim=0).unsqueeze(0)
-
             # Move to device
             tensor_values = tensor_values.to(self.device, non_blocking=True)
 
@@ -454,32 +461,35 @@ class FrankaInference(Node):
                 - `"observation.images.xxx"`: tensor (B, C, H, W)
         """
         
-        # Profile time to sync buffer
-        t0 = time.perf_counter()
+        # # Profile time to sync buffer
+        # t0 = time.perf_counter()
         
         # Make a snapshot copy inside lock
         with self.buffer_lock:
             buffer_copies = {k: list(v) for k, v in self.buffers.items()}
+            buffer_past_actions_copy = list(self.buffer_past_actions)
 
         # Sub-sample buffers data to align with delta_timestamps --> len == N_history
         buffer_synced = self.get_buffer_synced(buffer_copies)
 
-        # Profile time to sync buffer
-        t1 = time.perf_counter()
-        print(f"[Build obs] sync: {(t1-t0)*1000:.3f} ms")
+        # # Profile time to sync buffer
+        # t1 = time.perf_counter()
+        # print(f"[Build obs] sync: {(t1-t0)*1000:.3f} ms")
 
-        # Profile time to stack buffers
-        t0 = time.perf_counter()
+        # # Profile time to stack buffers
+        # t0 = time.perf_counter()
 
         # Convert data to tensors and create history
         data_tensors = {} 
         for k, buf in buffer_synced.items():
-            is_image = "webcam" in k or "rgb" in k
-            data_tensors[k] = self.stack_data(buf, is_image=is_image) # (B, N_history, ...)
+            data_tensors[k] = self.stack_data(k, buf) # (B, N_history, ...)
 
-        # Profile time to stack buffers
-        t1 = time.perf_counter()
-        print(f"[Build obs] stack: {(t1-t0)*1000:.3f} ms")
+        # Same for past actions buffer
+        data_tensors["action"] = self.stack_data("action", buffer_past_actions_copy)
+
+        # # Profile time to stack buffers
+        # t1 = time.perf_counter()
+        # print(f"[Build obs] stack: {(t1-t0)*1000:.3f} ms")
 
         # Rebuild state vector (B, N_hist, D) as in original dataset
         state = torch.cat([
@@ -511,16 +521,16 @@ class FrankaInference(Node):
             self.p_base = p_base.squeeze(0)
             self.R_base = R_base.squeeze(0)
         
-        # Profile time for transforms
-        t0 = time.perf_counter()
+        # # Profile time for transforms
+        # t0 = time.perf_counter()
             
         # Apply custom transforms
         observation = self.tf_inference.transform(observation) # in/out: (B, N_h, ...)
 
-        # Profile time for transforms
-        torch.cuda.synchronize()
-        t1 = time.perf_counter()
-        print(f"[Build obs] transforms: {(t1-t0)*1000:.3f} ms")
+        # # Profile time for transforms
+        # torch.cuda.synchronize()
+        # t1 = time.perf_counter()
+        # print(f"[Build obs] transforms: {(t1-t0)*1000:.3f} ms")
 
         # Remove key "action"
         observation.pop("action", None)
@@ -590,20 +600,20 @@ class FrankaInference(Node):
         # Wait at least 1 data for each buffer
         if (not(self.ready())):
             return
-
-        # Profile time to build observation
-        t0 = time.perf_counter()
+        
+        # # Profile time to build observation
+        # t0 = time.perf_counter()
 
         # Build observation
         obs = self.build_obs()
 
-        # Profile time to build observation
-        torch.cuda.synchronize()
-        t1 = time.perf_counter()
-        print(f"[Timer] build obs: {(t1-t0)*1000:.3f} ms")
+        # # Profile time to build observation
+        # torch.cuda.synchronize()
+        # t1 = time.perf_counter()
+        # print(f"[Timer] build obs: {(t1-t0)*1000:.3f} ms")
 
-        # Profile time for inference
-        t0 = time.perf_counter()
+        # # Profile time for inference
+        # t0 = time.perf_counter()
 
         # Inference
         with torch.inference_mode():
@@ -612,10 +622,10 @@ class FrankaInference(Node):
             print("step: ", self.current_step)
             # print("policy action: ", action)
 
-        # Profile time for inference
-        torch.cuda.synchronize()
-        t1 = time.perf_counter()
-        print(f"[Timer] inference: {(t1-t0)*1000:.3f} ms")
+        # # Profile time for inference
+        # torch.cuda.synchronize()
+        # t1 = time.perf_counter()
+        # print(f"[Timer] inference: {(t1-t0)*1000:.3f} ms")
 
         # Update policy steps
         self.current_step += 1
@@ -663,13 +673,13 @@ class FrankaInference(Node):
 
         # Build final action as expected by controller
         action_pre_tf = torch.cat(action_parts, dim=-1).numpy()
-        # print("action policy", action_pre_tf)
+        # print("action policy: ", action_pre_tf)
         
         # Eventually smooth policy output
         if self.smooth_output == True:
 
             # Get previous action from buffer (take only the action values)
-            prev_action = np.array(self.buffers["action"][-1][1], dtype=np.float32)
+            prev_action = np.array(self.buffer_past_actions[-1], dtype=np.float32)
             # print("prev_action", prev_action)
 
             # Filter action
@@ -678,7 +688,7 @@ class FrankaInference(Node):
 
         # Save action in buffer safely
         with self.buffer_lock:
-            self.buffers["action"].append((self.get_clock().now().to_msg(), action_pre_tf))
+            self.buffer_past_actions.append(action_pre_tf)
 
         # Set cart pose action
         cart_msg = PoseStamped()
