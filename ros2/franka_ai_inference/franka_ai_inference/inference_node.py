@@ -154,6 +154,7 @@ class FrankaInference(Node):
         # Params
         self.p_base = torch.zeros(3) # init
         self.R_base = torch.eye(3)   # init
+        self.is_ready = False # node is_ready condition
 
         # Enable MultiThreadedExecutor + ReentrantCallbacks to enbale callbacks/timer to be processed without delays
         self.timer_group = MutuallyExclusiveCallbackGroup()
@@ -291,6 +292,10 @@ class FrankaInference(Node):
             bool: True if all required buffers have data, False otherwise.
         """
 
+        # Check rapidly the flag
+        if self.is_ready == True:
+            return True
+
         # Check all the state buffers have at least 1 element
         for k, buf in self.buffers.items():
             if (k!="action" and len(buf)<=0):
@@ -309,9 +314,15 @@ class FrankaInference(Node):
             
             # Compose action and add to buffer
             curr_action = curr_pos + curr_quat + [curr_grip]
-            self.buffer_past_actions.append(curr_action)
 
-        return len(self.buffer_past_actions) > 0 
+            # Past action buffer must be filled completely, while state buffers are filled automatically in 'get_buffer_synced()'
+            for _ in range(self.N_history):
+                self.buffer_past_actions.append(curr_action)
+
+        # Update flag
+        self.is_ready = len(self.buffer_past_actions) > 0 
+
+        return self.is_ready
 
     def get_data_at_ref_times(self, reference_times, buffer):
 
