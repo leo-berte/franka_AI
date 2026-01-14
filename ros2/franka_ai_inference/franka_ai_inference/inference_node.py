@@ -29,24 +29,27 @@ from franka_ai.models.utils import get_configs_models
 
 # TODO:
 
-# in ros2_webcam node abilitare header!
-# capire perche gripper state e action non stanno a 30hz nei synced deltas
-
-# 0) Come essere sicuri che codice funziona? Plotto su rqt_plot output policy Vs rosbag actions (GT) ? --> registro 1 episodio intero e traino su quello
-
+# 0) Plotto su rqt_plot output policy Vs rosbag actions (GT) ? --> registro 1 episodio intero e traino su quello
 # 0) A cosa serve action pad? Serve per ACT dentro inference? vedi trasnformrs.py
 # 1) traj stitching
 
 
 """
 Run: ros2 run franka_ai_inference inference_node --ros-args -p use_sim_time:=true
-Play rosbag: ros2 bag play bag1.db3 --clock
+Play rosbag: ros2 bag play bag1.db3 --clock   OR   ros2 bag play one_bag_20251218_172642_0.db3 --clock
 Run rqt_plot: ros2 run plotjuggler plotjuggler
+
+ros2 topic hz /panda_gripper/width
+ros2 topic hz /cartesian_impedance/equilibrium_pose_offline_test
+
 """
 
 
 ## Set relative path to inference.yaml before running the node ##
-checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/one_bag_act_2026-01-07_18-28-18"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/one_bag_act_2026-01-07_18-28-18" # PC PERSONALE E ROSBAG
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/config_act1_2026-01-07_12-46-30" # config1 (kinematics test) works!
+checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/config_act3_2026-01-07_14-07-28" # baseline works 
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/config_act6_2026-01-07_22-35-51" # testing options
 
 
 class FrankaInference(Node):
@@ -430,7 +433,7 @@ class FrankaInference(Node):
             # Convert from HWC to CHW + convert from uint8 to float32 + normalize [0, 1]
             tensor_values = tensor_values.permute(0, 1, 4, 2, 3).float() / 255.0
         
-        elif k=="action":
+        elif k == "action":
             
             # Convert to tensors: (1, N_history, ..)
             tensor_values = torch.stack([torch.as_tensor(b, dtype=torch.float32).flatten().pin_memory() for b in buff], dim=0).unsqueeze(0)
