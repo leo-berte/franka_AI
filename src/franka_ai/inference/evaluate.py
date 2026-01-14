@@ -19,7 +19,7 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-07_09-13-19 \
+                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-07_12-46-30 \
                                            --policy act
 
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
@@ -167,7 +167,7 @@ def main():
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         model_cfg=model_cfg,
-        selected_episodes=[0]
+        selected_episodes=[0] # with seed=50 --> idx=10 val_set, idx=0 train_set
     )
 
     # Save data
@@ -178,7 +178,12 @@ def main():
     dataset_meta = LeRobotDatasetMetadata(repo_id=None, root=dataset_path)
     fps_dataset = dataset_meta.fps
     fps_sampling_chunk = model_cfg["sampling"]["fps_sampling_chunk"]
+    fps_sampling_hist = model_cfg["sampling"]["fps_sampling_hist"]
     step_chunk = round(fps_dataset / fps_sampling_chunk)
+
+    # Consistency checks
+    if fps_sampling_hist != fps_sampling_chunk:
+        raise ValueError("fps_sampling_hist must be the same as fps_sampling_chunk.")
 
     # Pre-fill past actions
     action_buffer = init_action_buffer(train_loader, N_history)

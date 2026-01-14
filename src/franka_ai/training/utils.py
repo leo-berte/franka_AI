@@ -2,10 +2,10 @@ from datetime import datetime
 from shutil import copyfile
 import os
 import yaml
+import json
 from torch.utils.tensorboard import SummaryWriter
 
 from lerobot.configs.types import FeatureType, PolicyFeature, NormalizationMode
-
 
 
 # ---------
@@ -38,7 +38,7 @@ def set_output_folders_train(policy_type, dataset_path, config_folder):
 
     # Set run name
     dataset_name = dataset_path.split('/')[-1]
-    run_name = f"{dataset_name}_{policy_type}_{timestamp}"
+    run_name = f"{dataset_name}_{policy_type}_{config_folder}_{timestamp}"
 
     # Subfolders
     checkpoints_dir = os.path.join(base_output_dir, "checkpoints", run_name)
@@ -50,12 +50,34 @@ def set_output_folders_train(policy_type, dataset_path, config_folder):
     # TensorBoard writer
     writer = SummaryWriter(log_dir=tensorboard_dir)
 
+    # Inject policy name and dataset fps into inference.yaml and save it in 'checkpoints_dir'
+
+    with open(f"configs/{config_folder}/inference.yaml", "r") as f:
+        inference_cfg = yaml.safe_load(f)
+
+    inference_cfg.setdefault("inference", {})
+    inference_cfg["inference"]["policy_name"] = policy_type
+    inference_cfg["inference"]["fps_dataset"] = load_dataset_fps(dataset_path)
+
+    with open(os.path.join(checkpoints_dir, "inference.yaml"), "w") as f:
+        yaml.safe_dump(inference_cfg, f, sort_keys=False)
+
     # Save configs inside checkpoint folder for reproducibility
     copyfile(f"configs/{config_folder}/dataset.yaml", os.path.join(checkpoints_dir, "dataset.yaml"))
     copyfile(f"configs/{config_folder}/train.yaml", os.path.join(checkpoints_dir, "train.yaml"))
     copyfile(f"configs/{config_folder}/models.yaml", os.path.join(checkpoints_dir, "models.yaml"))
 
     return checkpoints_dir, tensorboard_dir, writer
+
+def load_dataset_fps(dataset_path):
+
+    info_path = os.path.join(dataset_path, "meta", "info.json")
+
+    with open(info_path, "r") as f:
+        info = json.load(f)
+
+    fps = info["fps"]
+    return float(fps)
 
 def update_best_model_symlink(checkpoints_dir, ckpt_path, best_val_loss, avg_val_loss, step):
 

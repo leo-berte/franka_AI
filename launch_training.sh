@@ -3,12 +3,11 @@
 ## NOTE: Check if it creates the same folder name for checkpoints since when 2 trainings are launched together ##
 
 DATA=/mnt/Data/datasets/lerobot/one_bag
-# DATA=/workspace/data/single_outliers
 
 POLICY=act
 
-python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act1
-python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act1 --policy $POLICY
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act1
+# python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act1 --policy $POLICY
 
 # python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act2
 # python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act2 --policy $POLICY
@@ -27,3 +26,12 @@ python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_ac
 
 # python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act7
 # python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act7 --policy $POLICY
+
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act8
+# python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act8 --policy $POLICY
+
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act9
+# python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act9 --policy $POLICY
+
+# python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config Test_B/config_act10
+# python src/franka_ai/training/train.py --dataset $DATA --config Test_B/config_act10 --policy $POLICY
