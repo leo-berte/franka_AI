@@ -29,7 +29,6 @@ from franka_ai.models.utils import get_configs_models
 
 # TODO:
 
-# 0) Plotto su rqt_plot output policy Vs rosbag actions (GT) ? --> registro 1 episodio intero e traino su quello
 # 0) A cosa serve action pad? Serve per ACT dentro inference? vedi trasnformrs.py
 # 1) traj stitching
 
