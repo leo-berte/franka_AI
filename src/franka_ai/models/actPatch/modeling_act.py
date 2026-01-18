@@ -33,8 +33,7 @@ from torch import Tensor, nn
 from torchvision.models._utils import IntermediateLayerGetter
 from torchvision.ops.misc import FrozenBatchNorm2d
 
-from franka_ai.models.actPatch.configuration_act_original import ACTConfig
-# from lerobot.common.policies.act.configuration_act import ACTConfig
+from franka_ai.models.actPatch.configuration_act import ACTConfig
 
 from lerobot.common.policies.normalize import Normalize, Unnormalize
 from lerobot.common.policies.pretrained import PreTrainedPolicy

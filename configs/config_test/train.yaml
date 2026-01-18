@@ -1,0 +1,65 @@
+# --------
+# TRAINING
+# --------
+
+training:
+
+  training_steps: 2    # number of training steps
+  log_freq: 2            # logs train loss, gradNorm, lr
+  eval_freq: 2           # logs eval loss
+  save_ckpt_freq: 2     # save checkpoints
+
+
+# --------
+# POLICIES
+# --------
+
+policies:
+
+  diffusion:
+
+    optimizer:
+      learning_rate: 0.0001
+      weight_decay: 0.000001
+    scheduler:
+      lr_warmup_steps: 500 # around 5-10% of training steps
+    normalization:
+      VISUAL: "MEAN_STD"
+      STATE: "MIN_MAX"
+      ACTION: "MIN_MAX"
+
+  act:
+
+    optimizer:
+      learning_rate: 0.00001
+      weight_decay: 0.001
+    scheduler:
+      lr_warmup_steps: 150 # around 5-10% of training steps
+    normalization:
+      VISUAL: "MEAN_STD"
+      STATE: "MEAN_STD"
+      ACTION: "MEAN_STD"
+
+  flowLeonardo:
+
+    optimizer:
+      learning_rate: 0.00001
+      weight_decay: 0.001
+    scheduler:
+      lr_warmup_steps: 150 # around 5-10% of training steps
+    normalization:
+      VISUAL: "MEAN_STD"
+      STATE: "MEAN_STD"
+      ACTION: "MEAN_STD"
+
+  template:
+
+    optimizer:
+      learning_rate: 0.00001
+      weight_decay: 0.001
+    scheduler:
+      lr_warmup_steps: 150 # around 5-10% of training steps
+    normalization:
+      VISUAL: "MEAN_STD"
+      STATE: "MEAN_STD"
+      ACTION: "MEAN_STD"
