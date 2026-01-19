@@ -4,10 +4,10 @@
 
 training:
 
-  training_steps: 2    # number of training steps
-  log_freq: 2            # logs train loss, gradNorm, lr
-  eval_freq: 2           # logs eval loss
-  save_ckpt_freq: 2     # save checkpoints
+  training_steps: 3000    # number of training steps
+  log_freq: 200            # logs train loss, gradNorm, lr
+  eval_freq: 200           # logs eval loss
+  save_ckpt_freq: 3000     # save checkpoints
 
 
 # --------

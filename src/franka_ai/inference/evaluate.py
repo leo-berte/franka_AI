@@ -19,7 +19,7 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                           --checkpoint outputs/checkpoints/one_bag_act_2026-01-07_12-46-30 \
+                                           --checkpoint outputs/checkpoints/one_bag_diffusion_config_test_2026-01-19_13-54-12 \
                                            --policy act
 
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
@@ -227,12 +227,6 @@ def main():
         # Apply custom transforms
         batch = tf_inference.transform(batch)
 
-        # Convert (B,N_hist, D) in (B, D) by taking last timestep (input format required by policy)
-        for k, v in batch.items():
-            if isinstance(v, torch.Tensor) and v.dim() >= 3: 
-                v = v[:, -1, ...].contiguous()
-                batch[k] = v
-
         # print("transform", {k:v.shape for k,v in batch.items() if isinstance(v, torch.Tensor)})
 
         # Remove "action" from observations
@@ -244,8 +238,8 @@ def main():
 
         # Inference
         with torch.inference_mode():
-            action = policy.select_action(batch) # (B, D) --> (B, D)
-            # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
+            action = policy.select_action(batch) # (B, N_hist, D) --> (B, D)
+            # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (B, N_chunk, D)
             print("step: ", step)
         
         # Update policy steps

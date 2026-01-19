@@ -11,8 +11,8 @@ from lerobot.configs.types import NormalizationMode
 class TemplateConfig(PreTrainedConfig):
 
     # Input / output structure
-    n_obs_steps: int = 1
-    chunk_size: int = 100
+    N_history: int = 1
+    N_chunk: int = 100
     n_action_steps: int = 100
 
     normalization_mapping: dict[str, NormalizationMode] = field(
@@ -23,10 +23,11 @@ class TemplateConfig(PreTrainedConfig):
         }
     )
 
-    # Architecture params
+    # Vision architecture params
     vision_backbone: str = "resnet18"
     pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1"
     replace_final_stride_with_dilation: int = False
+    # Transformer architecture params
     dim_model: int = 512
     nhead: int = 4
     num_layers: int = 4
@@ -35,14 +36,10 @@ class TemplateConfig(PreTrainedConfig):
 
         super().__post_init__()
 
-        if self.n_action_steps > self.chunk_size:
+        if self.n_action_steps > self.N_chunk:
             raise ValueError(
                 f"The chunk size is the upper bound for the number of action steps per model invocation. Got "
-                f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`."
-            )
-        if self.n_obs_steps != 1:
-            raise ValueError(
-                f"Multiple observation steps not handled yet. Got `nobs_steps={self.n_obs_steps}`"
+                f"{self.n_action_steps} for `n_action_steps` and {self.N_chunk} for `N_chunk`."
             )
     
     # Mandatory methods due to inheritance from 'PreTrainedConfig'

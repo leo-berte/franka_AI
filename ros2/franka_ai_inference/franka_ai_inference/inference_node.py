@@ -29,7 +29,6 @@ from franka_ai.models.utils import get_configs_models
 
 # TODO:
 
-# 0) A cosa serve action pad? Serve per ACT dentro inference? vedi trasnformrs.py
 # 1) traj stitching
 
 
@@ -40,7 +39,6 @@ Run rqt_plot: ros2 run plotjuggler plotjuggler
 
 ros2 topic hz /panda_gripper/width
 ros2 topic hz /cartesian_impedance/equilibrium_pose_offline_test
-
 """
 
 
@@ -548,12 +546,6 @@ class FrankaInference(Node):
         # Remove key "action"
         observation.pop("action", None)
 
-        # Convert (B,N_hist, D) in (B, D) by taking last timestep (input format required by policy)
-        for k, v in observation.items():
-            if isinstance(v, torch.Tensor) and v.dim() >= 3: 
-                v = v[:, -1, ...].contiguous()
-                observation[k] = v
-
         return observation
 
     def smooth_action(self, new_action, prev_action):
@@ -630,8 +622,8 @@ class FrankaInference(Node):
 
         # Inference
         with torch.inference_mode():
-            action = self.policy.select_action(obs) # (B, D) --> (B, D)
-            # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (N_chunk, D)
+            action = self.policy.select_action(obs) # (B, N_hist, D) --> (B, D)
+            # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (B, N_chunk, D)
             print("step: ", self.current_step)
             # print("policy action: ", action)
 

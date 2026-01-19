@@ -108,20 +108,65 @@ class ACTPolicy(PreTrainedPolicy):
         else:
             self._action_queue = deque([], maxlen=self.config.n_action_steps)
 
+    # PATCH
+    def prepare_image_features(self, batch):
+
+        if not self.config.image_features:
+            return batch
+        
+        batch = dict(batch) # shallow copy so that adding a key doesn't modify the original
+        batch["observation.images"] = [batch[k] for k in self.config.image_features] # list containing each img tensor
+
+        return batch
+
+    # PATCH
+    def remove_time_dimension(self, batch):
+
+        batch = dict(batch) # shallow copy so that adding a key doesn't modify the original
+
+        # PATCH: remove time dimension from state taking only last step
+        batch["observation.state"] = batch["observation.state"][:, -1, :] # (B, N_h, D) --> (B, D)
+
+        # PATCH: remove time dimension from images taking only last step
+        for k, v in batch.items():
+            if isinstance(v, torch.Tensor) and v.dim() == 5:  # (B, N_h, C, H, W)
+                batch[k] = v[:, -1, ...] # (B, C, H, W)
+
+        return batch
+    
     @torch.no_grad
     def select_action(self, batch: dict[str, Tensor]) -> Tensor:
-        """Select a single action given environment observations.
+
+        """
+        Select a single action given environment observations.
 
         This method wraps `select_actions` in order to return one action at a time for execution in the
         environment. It works by managing the actions in a queue and only calling `select_actions` when the
         queue is empty.
+
+        # PATCH (batch format)
+
+        `batch` should have the following structure:
+
+        {
+            [robot_state_feature]: (B, N_history, state_dim) batch of robot states
+
+            [image_features]: (B, N_history, C, H, W) batch of images
+        }
+
+        Returns:
+            (B, N_chunk, action_dim) batch of action sequences
         """
+
         self.eval()
 
+        # PATCH
+        batch = self.remove_time_dimension(batch)
+
         batch = self.normalize_inputs(batch)
-        if self.config.image_features:
-            batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch["observation.images"] = [batch[key] for key in self.config.image_features]
+
+        # Processing (PATCH)
+        batch = self.prepare_image_features(batch)
 
         # If we are doing temporal ensembling, do online updates where we keep track of the number of actions
         # we are ensembling over.
@@ -145,21 +190,31 @@ class ACTPolicy(PreTrainedPolicy):
         return self._action_queue.popleft()
 
     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, dict]:
-        """Run the batch through the model and compute the loss for training or validation."""
 
-        # PATCH: remove time dimensions from state
-        batch["observation.state"] = batch["observation.state"].squeeze(1)
+        """
+        Run the batch through the model and compute the loss for training or validation.
+        
+        # PATCH (batch format)
 
-        # PATCH: remove time dimension from images
-        for k, v in batch.items():
-            if isinstance(v, torch.Tensor) and v.dim() == 5:  # (B, N_h, C, H, W)
-                batch[k] = v.squeeze(1)  # (B, C, H, W)
+        `batch` should have the following structure:
+
+        {
+            [robot_state_feature]: (B, N_history, state_dim) batch of robot states
+
+            [image_features]: (B, N_history, C, H, W) batch of images
+        }
+
+        Returns:
+            (B, N_chunk, action_dim) batch of action sequences
+        """
+
+        # PATCH
+        batch = self.remove_time_dimension(batch)
 
         batch = self.normalize_inputs(batch)
 
-        if self.config.image_features:
-            batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch["observation.images"] = [batch[key] for key in self.config.image_features]
+        # Processing (PATCH)
+        batch = self.prepare_image_features(batch)
 
         batch = self.normalize_targets(batch)
         actions_hat, (mu_hat, log_sigma_x2_hat) = self.model(batch)
@@ -399,13 +454,14 @@ class ACT(nn.Module):
                 nn.init.xavier_uniform_(p)
 
     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:
+        
         """A forward pass through the Action Chunking Transformer (with optional VAE encoder).
 
         `batch` should have the following structure:
         {
             [robot_state_feature] (optional): (B, state_dim) batch of robot states.
 
-            [image_features]: (B, n_cameras, C, H, W) batch of images.
+            [image_features]: (B, C, H, W) batch of images.
                 AND/OR
             [env_state_feature]: (B, env_dim) batch of environment states.
 
@@ -417,6 +473,7 @@ class ACT(nn.Module):
             Tuple containing the latent PDF's parameters (mean, log(σ²)) both as (B, L) tensors where L is the
             latent dimension.
         """
+        
         if self.config.use_vae and self.training:
             assert "action" in batch, (
                 "actions must be provided when using the variational objective in training mode."

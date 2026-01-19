@@ -40,9 +40,9 @@ flowLeonardo:
 template:
 
   params:
-    n_obs_steps: 1
-    chunk_size: 50
-    n_action_steps: 8
+    N_history: 3
+    N_chunk: 50
+    n_action_steps: 25
 
   sampling:
     fps_sampling_hist: 30

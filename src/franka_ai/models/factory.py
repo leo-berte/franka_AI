@@ -3,7 +3,7 @@
 def get_policy_class(policy_name):
 
     if policy_name == "diffusion":
-        from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
+        from franka_ai.models.diffusionPatch.modeling_diffusion import DiffusionPolicy
         return DiffusionPolicy
     elif policy_name == "act":
         from franka_ai.models.actPatch.modeling_act import ACTPolicy
@@ -23,7 +23,7 @@ def get_policy_class(policy_name):
 def get_policy_config_class(policy_name):
 
     if policy_name == "diffusion":
-        from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionConfig
+        from franka_ai.models.diffusionPatch.configuration_diffusion import DiffusionConfig
         return DiffusionConfig
     elif policy_name == "act":
         from franka_ai.models.actPatch.configuration_act import ACTConfig
