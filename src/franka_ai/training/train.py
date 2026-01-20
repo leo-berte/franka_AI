@@ -57,7 +57,7 @@ def parse_args():
                         help="Absolute path to pretrained checkpoint")
 
     parser.add_argument("--policy", type=str, required=True,
-                        choices=["diffusion", "act", "flow"],
+                        choices=["diffusion", "act", "flowLeonardo", "template"],
                         help="Policy name")
     
     parser.add_argument("--config", type=str, default="config",
