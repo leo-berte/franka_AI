@@ -25,8 +25,15 @@ from lerobot.common.policies.pretrained import PreTrainedPolicy
 
 # TODO:
 
-# 1) Studia con esempi codice: cat/stack, view/reshape/flatten, einops/repeat, ..
+# xavier init? 
 
+# 0) in_episode_bound = ~batch["action_is_pad"] --> capire questione, xke qui loss su flow non su actions
+# 1) add print shape in every submodule and check with comments
+# 2) train 3k steps on one_bag
+# 3) test inference offline
+# 4) update comments strings
+
+# Studia con esempi codice: cat/stack, view/reshape/flatten, einops/repeat, ..
 
 
 class FlowPolicy(PreTrainedPolicy):
@@ -105,6 +112,8 @@ class FlowPolicy(PreTrainedPolicy):
         Returns:
             (B, N_chunk, action_dim) batch of action sequences
         """
+
+        print("select_action")
         
         self.eval()
 
@@ -118,13 +127,13 @@ class FlowPolicy(PreTrainedPolicy):
         if len(self._action_queue) == 0:
             
             # When the action_queue is depleted, populate it by querying the policy
-            actions = self.model.generate_action(batch)[:, :self.config.n_action_steps]   ??????
+            actions = self.model.generate_action(batch) # [1, N_chunk, act_dim]
+            actions = actions[:, :self.config.n_action_steps, :] # [1, n_action_steps, act_dim]
 
             # unnormalize outputs
             actions = self.unnormalize_outputs({"action": actions})["action"]
 
-            # `self.model.forward` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
-            # effectively has shape (n_action_steps, batch_size, *), hence the transpose
+            # The queue has shape (n_action_steps, batch_size, *), hence the transpose
             self._action_queue.extend(actions.transpose(0, 1))
 
         return self._action_queue.popleft()
@@ -174,19 +183,25 @@ class Flow(nn.Module):
         self.config = config
 
         if self.config.robot_state_feature:
-            self.obs_projector = ObsProjector(input_dim=self.config.robot_state_feature.shape[0], output_dim=self.config.dim_model)
+            self.obs_projector = ObsProjector(input_dim=self.config.robot_state_feature.shape[0], 
+                                              output_dim=self.config.dim_model)
             # self.binary_ee_projector = nn.Embedding(2, self.config.embed_dim) # 2 states: close/open
 
         if self.config.image_features:
-            self.vision_projector = VisionProjector(output_dim=self.config.dim_model)
+            self.vision_projector = VisionProjector(replace_final_stride_with_dilation=self.config.replace_final_stride_with_dilation, 
+                                                    vision_backbone=self.config.vision_backbone, 
+                                                    pretrained_backbone_weights=self.config.pretrained_backbone_weights, 
+                                                    output_dim=self.config.dim_model)
 
-        self.encoder = TransformerEncoder(dim_model=self.config.dim_model, num_layers=self.config.num_layers, nhead=self.config.nhead)
+        self.encoder = TransformerEncoder(dim_model=self.config.dim_model, 
+                                          num_layers=self.config.num_layers, 
+                                          nhead=self.config.nhead)
         
         # Final flow head
-        self.flow = FlowHead(action_dim=self.config.action_feature.shape[0], dim_model=self.config.dim_model)
-        # self.action_head = nn.Linear(config.dim_model, config.N_chunk * self.config.action_feature.shape[0])
+        self.flow_head = FlowHead(action_dim=self.config.action_feature.shape[0], 
+                                  dim_model=self.config.dim_model)
 
-    def compute_loss(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:
+    def predict_flow(self, x_t : Tensor, t : Tensor, batch_obs : Tensor, batch_images : list[Tensor]) -> Tensor | None:
 
         """
         A forward pass through the Flow policy.
@@ -200,14 +215,14 @@ class Flow(nn.Module):
         }
 
         Returns:
-            (B, N_chunk, action_dim) batch of action sequences
+            ????
         """
 
-        # --> x_t, t, obs, img, ee_status
+        print("predict_flow")
 
         # obs projector
         if self.config.robot_state_feature:
-            obs_features = self.obs_projector(batch["observation.state"]) # [B, N_HISTORY, dim_model]
+            obs_features = self.obs_projector(batch_obs) # [B, N_HISTORY, dim_model]
             # ee_embeds = self.binary_ee_projector(ee_status) # [B, N_HISTORY, dim_model] --> I look up integers in ee_status and return corresponding embeddings
 
         # vision projector
@@ -216,12 +231,12 @@ class Flow(nn.Module):
             all_cam_features = []
 
             # Create a list of cameras
-            for images in batch["observation.images"]: # [B, N_HIST, C, H, W]
+            for images in batch_images: # [B, N_HIST, C, H, W]
 
                 B, N_HIST, C, H, W = images.shape
                 images = images.view(B * N_HIST, C, H, W)
 
-                self.vision_projector(images) # [B*N_HIST, dim_model, H', W']
+                cam_features = self.vision_projector(images) # [B*N_HIST, dim_model, H', W']
 
                 _, dim_model, H_prime, W_prime = cam_features.shape
                 cam_features = cam_features.view(B, N_HIST, dim_model, H_prime, W_prime)
@@ -230,39 +245,103 @@ class Flow(nn.Module):
 
         # transformer embedding
         # e = self.encoder(obs_embeds, img_embeds, ee_embeds) # [B, dim_model]
-        e = self.encoder(obs_features, all_cam_features) # [B, dim_model]
+        e = self.encoder(obs_features, all_cam_features) # [B, dim_model] (since I take only CLS token)
 
         # predict flow
-        v_pred = self.flow(x_t, t, e)
+        v_pred = self.flow_head(x_t, t, e) # [B, N_chunk, act_dim]
 
         return v_pred
     
-    def generate_action(self, obs, img, ee, steps=20):
+    def compute_loss(self, batch: dict[str, Tensor]) -> Tensor | None:
+
+        """
+        A forward pass through the Flow policy.
+
+        `batch` should have the following structure:
+
+        {
+            [robot_state_feature]: (B, N_history, state_dim) batch of robot states
+
+            [image_features]: (B, N_history, C, H, W) batch of images
+        }
+
+        Returns:
+            ??????
+        """
+
+        print("compute_loss")
+
+        # get device type
+        device = batch["action"].device
+
+        # sample random noise for source distribution (uniform or gaussian)
+        B, N_chunk, act_dim = batch["action"].shape
+        # action_chunk_src = torch.rand(B, N_chunk, act_dim, device=device) # uniform
+        action_chunk_src = torch.randn(B, N_chunk, act_dim, device=device) # gaussian
+
+        print("action_chunk_src: ", action_chunk_src.shape)
+        print("action from batch: ", batch["action"].shape)
+        
+        # target flow (ground truth vector field)
+        v_target = batch["action"] - action_chunk_src # [B, N_chunk, act_dim] 
+
+        print("v_target: ", v_target.shape)
+        
+        # sample random time t ~ U(0,1)
+        t = torch.rand(B, 1, 1, device=device)  # each sample has its own time
+
+        print("t: ", t.shape)
+        
+        # interpolation toward noise
+        x_t = action_chunk_src + t * v_target # [B, N_chunk, act_dim] 
+
+        print("x_t: ", x_t.shape)
+
+        # predict flow
+        v_pred = self.predict_flow(x_t, 
+                                   t, 
+                                   batch["observation.state"], 
+                                   batch["observation.images"]) # [B, N_chunk, act_dim]
+        
+        print("v_pred: ", v_pred.shape)
+
+        # Flow Matching loss
+        loss = F.mse_loss(v_pred, v_target, reduction="none")
+        print("loss: ", loss.shape)
+
+        in_episode_bound = ~batch["action_is_pad"]
+        loss = (loss * in_episode_bound.unsqueeze(-1)).mean()
+
+        return loss
     
-        # init nets
-        model = PolicyModel(OBS_DIM, ACT_DIM, EMBED_DIM)
+    def generate_action(self, batch: dict[str, Tensor]) -> Tensor | None:
 
-        # eval
-        model.eval()
+        print("generate_action")
 
-        with torch.no_grad():
+        # get device type
+        device = batch["action"].device
 
-            # add batch dimension
-            obs = obs.unsqueeze(0) # [1, N_HISTORY, OBS_DIM]
-            img = img.unsqueeze(0) # [1, N_HISTORY, 3, H, W]
-            ee  = ee.unsqueeze(0)  # [1, N_HISTORY]                   
+        # start from noise (gaussian or uniform)
+        B, N_chunk, act_dim = batch["action"].shape
+        # x = torch.rand(B, N_chunk, act_dim, device=device) # uniform
+        x = torch.randn(B, N_chunk, act_dim, device=device) # gaussian
 
-            # start from noise (gaussian or uniform)
-            x = torch.rand(1, ACT_HORIZON, ACT_DIM)  
+        # integrate flow
+        dt = 1.0 / self.config.denoising_steps
 
-            # integrate flow
-            dt = 1.0 / steps
-            for i in range(steps):
-                t = torch.ones(1, 1) * (i/steps)  # shape: [1,1]
-                v = model(x, t, obs, img, ee) # [B, ACT_HORIZON, ACT_DIM]
-                x = x + dt * v  # follow flow towards clean action
+        for i in range(self.config.denoising_steps):
 
-            return x  # denoised action (trajectory chunk)
+            t = torch.ones((B, 1), device=device) * (i + 1) / self.config.denoising_steps # shape: [B,1]
+            
+            # predict flow
+            v = self.predict_flow(x, 
+                                  t, 
+                                  batch["observation.state"], 
+                                  batch["observation.images"]) # [B, N_chunk, act_dim]
+    
+            x = x + dt * v  # [B, N_chunk, act_dim]
+
+        return x
     
 
 class ObsProjector(nn.Module):
@@ -281,17 +360,17 @@ class ObsProjector(nn.Module):
 
 class VisionProjector(nn.Module):
     
-    def __init__(self, output_dim):
+    def __init__(self, replace_final_stride_with_dilation, vision_backbone, pretrained_backbone_weights, output_dim):
         
         super().__init__()
 
         # Backbone for image feature extraction
-        backbone_model = getattr(torchvision.models, self.config.vision_backbone)(
-            replace_stride_with_dilation=[False, False, self.config.replace_final_stride_with_dilation],
-            weights=self.config.pretrained_backbone_weights,
+        backbone_model = getattr(torchvision.models, vision_backbone)(
+            replace_stride_with_dilation=[False, False, replace_final_stride_with_dilation],
+            weights=pretrained_backbone_weights,
             norm_layer=FrozenBatchNorm2d,
         )
-        
+
         # Note: The assumption here is that we are using a ResNet model (and hence layer4 is the final
         # feature map). The forward method of this returns a dict: {"feature_map": output}.
         self.backbone = IntermediateLayerGetter(backbone_model, return_layers={"layer4": "feature_map"})
@@ -302,8 +381,10 @@ class VisionProjector(nn.Module):
 
     def forward(self, obs): # [B, N_HIST, C, H, W]
         
+        print("VisionProjector")
+
         obs = self.backbone(obs)["feature_map"]
-        obs = self.img_projector(obs) 
+        obs = self.img_projector(obs)
         return obs # [B*N_HIST, dim_model, H', W']
         
     
@@ -320,12 +401,15 @@ class TransformerEncoder(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers=num_layers)
 
     def forward(self, obs_features, all_cam_features): # , ee_embeds):
+        
+        print("TransformerEncoder")
 
         # get dimensions
         B, n_hist, dim_model = obs_features.shape
+        device = obs_features.device
 
         # add 1D positional encoding to observations
-        enc1D = self.pos_enc1D.compute(B, n_hist, dim_model)
+        enc1D = self.pos_enc1D.compute(B, n_hist, dim_model, device=device)
         obs_features = obs_features + enc1D
         # ee_embeds = ee_embeds + enc1D
 
@@ -337,7 +421,7 @@ class TransformerEncoder(nn.Module):
         for cam_features in all_cam_features: # loop over each camera
 
             # add spatial 2D positional encoding to images
-            enc2D = self.pos_enc2D.compute(B, dim_model, H_prime, W_prime)
+            enc2D = self.pos_enc2D.compute(B, dim_model, H_prime, W_prime, device=device)
             cam_features = cam_features + enc2D.unsqueeze(1)  # [B, N_HIST, dim_model, H', W'] --> broadcast along N_HIST dimension
 
             # build token representation (B, seq_len, d_model)
@@ -345,7 +429,7 @@ class TransformerEncoder(nn.Module):
             cam_features = cam_features.reshape(B, n_hist * H_prime * W_prime, dim_model)  # [B, N_HIST*H'*W', dim_model]
 
             # add temporal 1D positional encoding to images
-            enc1D = self.pos_enc1D.compute(B, n_hist * H_prime * W_prime, dim_model)
+            enc1D = self.pos_enc1D.compute(B, n_hist * H_prime * W_prime, dim_model, device=device)
             cam_features = cam_features + enc1D # [B, N_HIST*H'*W', dim_model]
 
             processed_all_cam_features.append(cam_features)
@@ -384,23 +468,30 @@ class FlowHead(nn.Module):
 
     def forward(self, x_t, t, e):
 
-        B, H, A = x_t.shape
+        B, N_chunk, act_dim = x_t.shape
+        B, dim_model = e.shape
+
+        print("FlowHead")
+
+        print("x_t: ", x_t.shape)
+        print("e: ", e.shape)
+        print("t: ", t.shape)
 
         # duplicate t and e across horizon (each timestep in the action chunk sees the same time t and same context embedding e)
-        t_expand = t.unsqueeze(1).expand(B, H, 1)   # [B,H,1]
-        e_expand = e.unsqueeze(1).expand(B, H, self.embed_dim)  # [B,H,E]
+        t_expand = t.expand(B, N_chunk, 1)   # [B, N_chunk, 1]
+        e_expand = e.unsqueeze(1).expand(B, N_chunk, dim_model)  # [B, N_chunk, dim_model]
 
         # concat along feature dim
-        inp = torch.cat([x_t, t_expand, e_expand], dim=-1)  # [B,H,A+1+E]
+        inp = torch.cat([x_t, t_expand, e_expand], dim=-1)  # [B, N_chunk, act_dim+1+dim_model]
 
         # flatten horizon so MLP sees each timestep independently
-        inp = inp.reshape(B*H, -1)  # [B*H, A+1+E]
+        inp = inp.reshape(B*N_chunk, -1)  # [B*N_chunk, act_dim+1+dim_model]
 
         # predict flows
-        out = self.mlp(inp)  # [B*H, A]
+        out = self.mlp(inp)  # [B*N_chunk, act_dim]
 
         # reshape back to chunk
-        out = out.view(B, H, A)  # [B,H,A]
+        out = out.view(B, N_chunk, act_dim)  # [B, N_chunk, act_dim]
         
         return out
 
@@ -416,11 +507,14 @@ class PosEmbedding1D():
         # params
         self.temperature = 10000 # ratio for the geometric progression in sinusoid frequencies
 
-    def compute(self, batch, seq_length, d_model):
+    def compute(self, batch, seq_length, d_model, device=None):
+
+        # Set device
+        device = device or torch.device('cpu')
 
         # compute positions and frequencies
-        pos = torch.arange(seq_length).unsqueeze(1)             # [seq_length, 1]
-        i = torch.arange(d_model).unsqueeze(0)                  # [1, d_model]
+        pos = torch.arange(seq_length, device=device).unsqueeze(1)             # [seq_length, 1]
+        i = torch.arange(d_model, device=device).unsqueeze(0)                  # [1, d_model]
         frequencies = 1.0 / (self.temperature ** (2 * (i//2) / d_model))   # [1, d_model] --> [f0,f0,f1,f1,...]
 
         # apply formula: even index -> sin, odd index -> cos
@@ -444,11 +538,14 @@ class PosEmbedding2D():
         self.two_pi = 2 * math.pi
         self.temperature = 10000 # ratio for the geometric progression in sinusoid frequencies
     
-    def compute(self, B, C, H, W):
+    def compute(self, B, C, H, W, device=None):
+
+        # Set device
+        device = device or torch.device('cpu')
 
         # Create 2D positions
-        y_pos = torch.arange(H, dtype=torch.float32).unsqueeze(1)  # (H,1)
-        x_pos = torch.arange(W, dtype=torch.float32).unsqueeze(0)  # (1,W)
+        y_pos = torch.arange(H, dtype=torch.float32, device=device).unsqueeze(1)  # (H,1)
+        x_pos = torch.arange(W, dtype=torch.float32, device=device).unsqueeze(0)  # (1,W)
 
         # Normalize positions to [0, 2pi]
         y_pos = y_pos / H * self.two_pi  # (H,1)
@@ -457,7 +554,7 @@ class PosEmbedding2D():
         # Compute inverse frequencies for half of the channels each
         d_model = C // 2
         assert d_model % 2 == 0, "d_model must be even for sine/cosine pairing in 2D positional encoding"
-        indexes = torch.arange(0, d_model, 2, dtype=torch.float32) # (d_model/2)
+        indexes = torch.arange(0, d_model, 2, dtype=torch.float32, device=device) # (d_model/2)
         inv_freq = 1.0 / (self.temperature ** (indexes / d_model)) # (d_model/2)
 
         # Compute angles (pos*freq) + Expand to H/W dimensions
@@ -465,11 +562,11 @@ class PosEmbedding2D():
         x_angle = x_pos.unsqueeze(2) / inv_freq  # (1,W,d_model/2)
 
         # Apply sin/cos alternately
-        y_embed = torch.zeros(H,1,d_model) # (H,1,d_model)
+        y_embed = torch.zeros(H,1,d_model, device=device) # (H,1,d_model)
         y_embed[:, :, 0::2] = y_angle.sin()
         y_embed[:, :, 1::2] = y_angle.cos()
 
-        x_embed = torch.zeros(1,W,d_model) # (1,W,d_model)
+        x_embed = torch.zeros(1,W,d_model, device=device) # (1,W,d_model)
         x_embed[:, :, 0::2] = x_angle.sin()
         x_embed[:, :, 1::2] = x_angle.cos()
 

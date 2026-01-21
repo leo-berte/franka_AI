@@ -28,10 +28,11 @@ class FlowConfig(PreTrainedConfig):
     pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1"
     replace_final_stride_with_dilation: int = False
     # Transformer architecture params
-    embed_dim: int = 512
     dim_model: int = 512
     nhead: int = 4
     num_layers: int = 4
+    # Flow inference
+    denoising_steps: int = 20
 
     def __post_init__(self):
 
