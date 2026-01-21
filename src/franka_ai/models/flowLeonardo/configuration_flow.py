@@ -6,9 +6,9 @@ from lerobot.configs.policies import PreTrainedConfig
 from lerobot.configs.types import NormalizationMode
 
 
-@PreTrainedConfig.register_subclass("template")
+@PreTrainedConfig.register_subclass("flow_leonardo")
 @dataclass
-class TemplateConfig(PreTrainedConfig):
+class FlowConfig(PreTrainedConfig):
 
     # Input / output structure
     N_history: int = 1
@@ -28,6 +28,7 @@ class TemplateConfig(PreTrainedConfig):
     pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1"
     replace_final_stride_with_dilation: int = False
     # Transformer architecture params
+    embed_dim: int = 512
     dim_model: int = 512
     nhead: int = 4
     num_layers: int = 4

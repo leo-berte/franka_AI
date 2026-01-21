@@ -5,25 +5,12 @@ from torch.utils.data import Dataset, DataLoader
 import math
 
 
-    
-# Pipeline: Transformer → embedding → Flow network
-# Transformer acts as a state encoder: e = encoderTransf(image, text, proprio)
-# I take the [CLS] token to get a single embedding as sumup
-# A smaller network (often MLP) predicts the flow: flow = MLP(concat(x_t, t, e))
+"""
+Run the code: 
 
+python src/franka_ai/models/flowLeonardo/examples/flow_matching.py 
 
-
-# TODO: 
-
-
-# 1) Add to_device()
-
-# 2) Add action ensembling + sport mode
-
-# 3) Investigate loss normalization flow matching
-# 4) Add diffusion function
-# 5) Plug this policy model to lerobot training code and run it on real dataset
-
+"""
 
 
 # --------------------------
