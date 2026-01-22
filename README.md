@@ -2,6 +2,16 @@
 
 End-to-end **AI pipeline for robotic manipulation** (covering dataset post-processing, training and real-time inference) built around fully containerized Docker environments. The project integrates state-of-the-art policies (ACT, Diffusion Policies) through the LeRobot framework, as well as custom flow-matching–based models using action-chunking and hybrid state-vision inputs. It is designed for **real-world logistics applications**, specifically pick-and-place of deformable soft bags using a Franka Panda robot.
 
+**Key Features**
+
+- Custom data transforms: multiple pose representations (quaternion / axis-angle / 6D), absolute or relative EE poses, optional past-action conditioning
+- YAML-driven configuration for transforms, training and models (no code changes required)
+- Integrated models: ACT and Diffusion Policy via LeRobot + custom Flow-Matching policy
+- Image augmentation & state noise injection during training
+- Training optimizations: AMP, AdamW, linear + cosine LR scheduling
+- Fully Dockerized setup for training and inference
+- ROS 2 real-time inference designed for multi-rate sensors and safe deployment on Franka Panda
+
 ## 1. Project structure
 
 ### 1.1 Folder structure
@@ -149,7 +159,10 @@ colcon build --symlink-install --packages-select franka_ai_inference
 
 ## 5. References
 
-- **Cadene, Remi and Alibert (2024)**: [*LeRobot: State-of-the-art Machine Learning for Real-World Robotics in Pytorch*](https://github.com/huggingface/lerobot)
+- **A. Xie, O. Rybkin (2025)**: [*Latent Diffusion Planning for Imitation Learning*](https://arxiv.org/pdf/2504.16925)
+- **E. Nava, V. Montesinos (2025)**: [*Mimic-One: a Scalable Model Recipe for General Purpose Robot Dexterity*](https://arxiv.org/pdf/2506.11916)
+- **Tony Z. Zhao (2023)**: [*Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware*](https://arxiv.org/pdf/2304.13705)
+- **R. Cadene, Alibert (2023)**: [*LeRobot: State-of-the-art Machine Learning for Real-World Robotics in Pytorch*](https://github.com/huggingface/lerobot)
 
 ## License
 
