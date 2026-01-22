@@ -45,8 +45,21 @@ ros2 topic hz /cartesian_impedance/equilibrium_pose_offline_test
 ## Set relative path to inference.yaml before running the node ##
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/one_bag_act_2026-01-07_18-28-18" # PC PERSONALE E ROSBAG
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/config_act1_2026-01-07_12-46-30" # config1 (kinematics test) works!
-checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/config_act3_2026-01-07_14-07-28" # baseline works 
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/config_act6_2026-01-07_22-35-51" # testing options
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/config_act3_2026-01-07_14-07-28" # baseline works 
+
+# no grasp
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_no_grasp_act_config_cubes_no_grasp/config_act3_2026-01-20_14-57-38" # works
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_no_grasp_act_config_cubes_no_grasp/config_act8_2026-01-20_18-25-04" # works
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_no_grasp_act_config_cubes_no_grasp/config_act9_2026-01-20_21-51-46" # not works on all corners
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_no_grasp_act_config_cubes_no_grasp/config_act10_2026-01-21_01-25-05"  # not works on all corners
+
+# with grasp
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act3_2026-01-21_05-05-25" # works only 1 corner
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act5_2026-01-21_08-57-46" # barely work only 2 corners
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act8_2026-01-21_12-47-17" # barely work only 2 corners
+checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act9_2026-01-21_16-38-27" # barely work only 2 corners
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/"
+
 
 
 class FrankaInference(Node):

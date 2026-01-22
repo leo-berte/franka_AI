@@ -7,7 +7,7 @@
 
 # python src/franka_ai/training/train.py --dataset $DATA --config config_test --policy $POLICY
 
-DATA=/mnt/Data/datasets/lerobot/cubes_no_grasp
+DATA=data/cubes_no_grasp
 POLICY=act
 
 python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_cubes_no_grasp/config_act3
@@ -22,7 +22,7 @@ python src/franka_ai/training/train.py --dataset $DATA --config config_cubes_no_
 python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_cubes_no_grasp/config_act10
 python src/franka_ai/training/train.py --dataset $DATA --config config_cubes_no_grasp/config_act10 --policy $POLICY
 
-DATA=/mnt/Data/datasets/lerobot/cubes_with_grasp
+DATA=data/cubes_with_grasp
 POLICY=act
 
 python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_cubes_with_grasp/config_act3
@@ -40,7 +40,7 @@ python src/franka_ai/training/train.py --dataset $DATA --config config_cubes_wit
 python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_cubes_with_grasp/config_act10
 python src/franka_ai/training/train.py --dataset $DATA --config config_cubes_with_grasp/config_act10 --policy $POLICY
 
-DATA=/mnt/Data/datasets/lerobot/cubes_column
+DATA=data/cubes_column
 POLICY=act
 
 python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_cubes_column/config_act3
