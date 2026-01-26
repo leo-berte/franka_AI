@@ -3,7 +3,6 @@
 from collections import deque
 import math
 
-import einops
 import torch
 import torch.nn.functional as F
 import torchvision
@@ -17,27 +16,32 @@ from lerobot.common.policies.normalize import Normalize, Unnormalize
 from lerobot.common.policies.pretrained import PreTrainedPolicy
 
 
-# Pipeline: Transformer → embedding → Flow network
-# Transformer acts as a state encoder: e = encoderTransf(image, text, proprio)
-# I take the [CLS] token to get a single embedding as sumup
-# A smaller network (often MLP) predicts the flow: flow = MLP(concat(x_t, t, e))
-
 
 # TODO:
 
-# xavier init? 
+# try to plot offline evaluation for cubes_with_grasps
+# training senza augmentation??
 
-# 0) in_episode_bound = ~batch["action_is_pad"] --> capire questione, xke qui loss su flow non su actions
-# 1) add print shape in every submodule and check with comments
-# 2) train 3k steps on one_bag
-# 3) test inference offline
-# 4) update comments strings
+# Use CLIP-pretrained ViT-B/32 encoder [29]. Images are resized to 224×224 pixels --> See force UMI gripper
+# update comments strings
 
-# Studia con esempi codice: cat/stack, view/reshape/flatten, einops/repeat, ..
 
 
 class FlowPolicy(PreTrainedPolicy):
 
+    """
+    Pipeline: Transformer → embedding → Flow network
+    Transformer acts as a state encoder: e = encoderTransf(image, text, proprio)
+    I take the [CLS] token to get a single embedding as sumup
+    A smaller network (often MLP) predicts the flow: flow = MLP(concat(x_t, t, e))
+
+    Args:
+        config: Policy configuration class instance or None, in which case the default instantiation of
+                the configuration class is used.
+        dataset_stats: Dataset statistics to be used for normalization. If not passed here, it is expected
+            that they will be passed with a call to `load_state_dict` before the policy is used.
+    """
+    
     config_class = FlowConfig
     name = "flow_leonardo"
 
@@ -46,14 +50,6 @@ class FlowPolicy(PreTrainedPolicy):
         config: FlowConfig,
         dataset_stats: dict[str, dict[str, Tensor]] | None = None,
     ):
-        
-        """
-        Args:
-            config: Policy configuration class instance or None, in which case the default instantiation of
-                    the configuration class is used.
-            dataset_stats: Dataset statistics to be used for normalization. If not passed here, it is expected
-                that they will be passed with a call to `load_state_dict` before the policy is used.
-        """
 
         super().__init__(config)
         config.validate_features()
@@ -97,9 +93,8 @@ class FlowPolicy(PreTrainedPolicy):
         """
         Select a single action given environment observations.
 
-        This method wraps `select_actions` in order to return one action at a time for execution in the
-        environment. It works by managing the actions in a queue and only calling `select_actions` when the
-        queue is empty.
+        Return one action at a time for execution in the environment. It works by managing the actions 
+        in a queue and only calling `select_actions` when the queue is empty.
 
         `batch` should have the following structure:
 
@@ -110,10 +105,8 @@ class FlowPolicy(PreTrainedPolicy):
         }
 
         Returns:
-            (B, N_chunk, action_dim) batch of action sequences
+            (B, action_dim) batch of action sequences
         """
-
-        print("select_action")
         
         self.eval()
 
@@ -150,9 +143,6 @@ class FlowPolicy(PreTrainedPolicy):
 
             [image_features]: (B, N_history, C, H, W) batch of images
         }
-
-        Returns:
-            (B, N_chunk, action_dim) batch of action sequences
         """
 
         # Normalize inputs
@@ -194,31 +184,21 @@ class Flow(nn.Module):
                                                     output_dim=self.config.dim_model)
 
         self.encoder = TransformerEncoder(dim_model=self.config.dim_model, 
-                                          num_layers=self.config.num_layers, 
-                                          nhead=self.config.nhead)
+                                          dim_feedforward_tf=self.config.dim_feedforward_tf,
+                                          nhead=self.config.nhead,
+                                          num_layers=self.config.num_layers)
         
         # Final flow head
-        self.flow_head = FlowHead(action_dim=self.config.action_feature.shape[0], 
-                                  dim_model=self.config.dim_model)
+        self.flow_head = FlowHead(N_chunk=self.config.N_chunk, 
+                                  action_dim=self.config.action_feature.shape[0], 
+                                  dim_model=self.config.dim_model,
+                                  dim_feedforward_flow=self.config.dim_feedforward_flow)
 
     def predict_flow(self, x_t : Tensor, t : Tensor, batch_obs : Tensor, batch_images : list[Tensor]) -> Tensor | None:
 
         """
-        A forward pass through the Flow policy.
-
-        `batch` should have the following structure:
-
-        {
-            [robot_state_feature]: (B, N_history, state_dim) batch of robot states
-
-            [image_features]: (B, N_history, C, H, W) batch of images
-        }
-
-        Returns:
-            ????
+        Predicts the flow given the source action, current time and batch.
         """
-
-        print("predict_flow")
 
         # obs projector
         if self.config.robot_state_feature:
@@ -239,9 +219,9 @@ class Flow(nn.Module):
                 cam_features = self.vision_projector(images) # [B*N_HIST, dim_model, H', W']
 
                 _, dim_model, H_prime, W_prime = cam_features.shape
-                cam_features = cam_features.view(B, N_HIST, dim_model, H_prime, W_prime)
+                cam_features = cam_features.view(B, N_HIST, dim_model, H_prime, W_prime) # [B, N_HIST, dim_model, H', W']
 
-                all_cam_features.append(cam_features) # [B, N_HIST, dim_model, H', W']
+                all_cam_features.append(cam_features)
 
         # transformer embedding
         # e = self.encoder(obs_embeds, img_embeds, ee_embeds) # [B, dim_model]
@@ -264,12 +244,7 @@ class Flow(nn.Module):
 
             [image_features]: (B, N_history, C, H, W) batch of images
         }
-
-        Returns:
-            ??????
         """
-
-        print("compute_loss")
 
         # get device type
         device = batch["action"].device
@@ -279,23 +254,14 @@ class Flow(nn.Module):
         # action_chunk_src = torch.rand(B, N_chunk, act_dim, device=device) # uniform
         action_chunk_src = torch.randn(B, N_chunk, act_dim, device=device) # gaussian
 
-        print("action_chunk_src: ", action_chunk_src.shape)
-        print("action from batch: ", batch["action"].shape)
-        
         # target flow (ground truth vector field)
         v_target = batch["action"] - action_chunk_src # [B, N_chunk, act_dim] 
 
-        print("v_target: ", v_target.shape)
-        
         # sample random time t ~ U(0,1)
         t = torch.rand(B, 1, 1, device=device)  # each sample has its own time
 
-        print("t: ", t.shape)
-        
         # interpolation toward noise
         x_t = action_chunk_src + t * v_target # [B, N_chunk, act_dim] 
-
-        print("x_t: ", x_t.shape)
 
         # predict flow
         v_pred = self.predict_flow(x_t, 
@@ -303,26 +269,26 @@ class Flow(nn.Module):
                                    batch["observation.state"], 
                                    batch["observation.images"]) # [B, N_chunk, act_dim]
         
-        print("v_pred: ", v_pred.shape)
-
         # Flow Matching loss
-        loss = F.mse_loss(v_pred, v_target, reduction="none")
-        print("loss: ", loss.shape)
+        loss = F.mse_loss(v_pred, v_target, reduction="none") # [B, N_chunk, act_dim]
 
-        in_episode_bound = ~batch["action_is_pad"]
+        # select valid timestamps only
+        in_episode_bound = ~batch["action_is_pad"] # [B, N_chunk]
         loss = (loss * in_episode_bound.unsqueeze(-1)).mean()
 
         return loss
     
     def generate_action(self, batch: dict[str, Tensor]) -> Tensor | None:
 
-        print("generate_action")
-
         # get device type
-        device = batch["action"].device
+        device = batch["observation.state"].device
+
+        # get dimensions
+        B = batch["observation.state"].shape[0]
+        N_chunk = self.config.N_chunk
+        act_dim = self.config.action_feature.shape[0]
 
         # start from noise (gaussian or uniform)
-        B, N_chunk, act_dim = batch["action"].shape
         # x = torch.rand(B, N_chunk, act_dim, device=device) # uniform
         x = torch.randn(B, N_chunk, act_dim, device=device) # gaussian
 
@@ -331,7 +297,7 @@ class Flow(nn.Module):
 
         for i in range(self.config.denoising_steps):
 
-            t = torch.ones((B, 1), device=device) * (i + 1) / self.config.denoising_steps # shape: [B,1]
+            t = torch.ones((B, 1, 1), device=device) * (i + 1) / self.config.denoising_steps # shape: [B,1]
             
             # predict flow
             v = self.predict_flow(x, 
@@ -379,38 +345,36 @@ class VisionProjector(nn.Module):
             backbone_model.fc.in_features, output_dim, kernel_size=1
         )
 
-    def forward(self, obs): # [B, N_HIST, C, H, W]
+    def forward(self, obs): # [B*N_HIST, C, H, W]
         
-        print("VisionProjector")
-
         obs = self.backbone(obs)["feature_map"]
         obs = self.img_projector(obs)
+
         return obs # [B*N_HIST, dim_model, H', W']
         
     
 class TransformerEncoder(nn.Module):   
 
-    def __init__(self, dim_model, num_layers, nhead):
+    def __init__(self, dim_model, dim_feedforward_tf, nhead, num_layers):
         
         super(TransformerEncoder, self).__init__()
         
-        self.pos_enc1D = PosEmbedding1D()
+        self.pos_enc1D = PosEmbedding1D(dim_model)
         self.pos_enc2D = PosEmbedding2D()
         self.cls_token = nn.Parameter(torch.randn(1, 1, dim_model)) 
-        encoder_layers = nn.TransformerEncoderLayer(d_model=dim_model, nhead=nhead, dropout=0.1, batch_first=True)
+        encoder_layers = nn.TransformerEncoderLayer(d_model=dim_model, nhead=nhead, dim_feedforward=dim_feedforward_tf, dropout=0.1, batch_first=True, norm_first=True)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers=num_layers)
+        self.final_norm = nn.LayerNorm(dim_model)
 
     def forward(self, obs_features, all_cam_features): # , ee_embeds):
-        
-        print("TransformerEncoder")
 
         # get dimensions
         B, n_hist, dim_model = obs_features.shape
         device = obs_features.device
 
         # add 1D positional encoding to observations
-        enc1D = self.pos_enc1D.compute(B, n_hist, dim_model, device=device)
-        obs_features = obs_features + enc1D
+        enc1D = self.pos_enc1D.compute(torch.arange(n_hist, dtype=torch.float32, device=device))
+        obs_features = obs_features + enc1D.unsqueeze(0)
         # ee_embeds = ee_embeds + enc1D
 
         # get dimensions
@@ -429,15 +393,15 @@ class TransformerEncoder(nn.Module):
             cam_features = cam_features.reshape(B, n_hist * H_prime * W_prime, dim_model)  # [B, N_HIST*H'*W', dim_model]
 
             # add temporal 1D positional encoding to images
-            enc1D = self.pos_enc1D.compute(B, n_hist * H_prime * W_prime, dim_model, device=device)
-            cam_features = cam_features + enc1D # [B, N_HIST*H'*W', dim_model]
+            enc1D = self.pos_enc1D.compute(torch.arange(n_hist * H_prime * W_prime, dtype=torch.float32, device=device)) 
+            cam_features = cam_features + enc1D.unsqueeze(0) # [B, N_HIST*H'*W', dim_model]
 
             processed_all_cam_features.append(cam_features)
 
         img_features = torch.cat(processed_all_cam_features, dim=1) # [B, N_cam*N_HIST*H'*W', dim_model]
 
-        # preperare data for transformer
-        cls_tokens = self.cls_token.repeat(B, 1, 1) # duplicate learnable CLS token for all samples in the batch --> [B, 1, dim_model]
+        # duplicate learnable CLS token for all samples in the batch (each sample in batch has its own CLS, and they all share same weights)
+        cls_tokens = self.cls_token.repeat(B, 1, 1) # [B, 1, dim_model]
 
         # x = torch.cat([cls_tokens, obs_features, img_features, ee_embeds], dim=1) # [B, seq_length=1+n_hist+N_cam*N_HIST*H'*W', dim_model]
         x = torch.cat([cls_tokens, obs_features, img_features], dim=1) # [B, seq_length=1+n_hist+N_cam*N_HIST*H'*W', dim_model]
@@ -445,87 +409,89 @@ class TransformerEncoder(nn.Module):
         # pass through transformer
         x = self.transformer_encoder(x) # [B, seq_length, dim_model]
         x = x[:,0,:]  # take only CLS token as summary --> [B, dim_model]
-        
-        return x
 
-
-class FlowHead(nn.Module):     
-    
-    def __init__(self, action_dim, dim_model):
-        
-        super().__init__()
-        
-        in_dim = action_dim + 1 + dim_model  # per timestep: action + time + context
-        out_dim = action_dim  # per timestep flow
-
-        self.mlp = nn.Sequential(
-            nn.Linear(in_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, out_dim)
-        )
-
-    def forward(self, x_t, t, e):
-
-        B, N_chunk, act_dim = x_t.shape
-        B, dim_model = e.shape
-
-        print("FlowHead")
-
-        print("x_t: ", x_t.shape)
-        print("e: ", e.shape)
-        print("t: ", t.shape)
-
-        # duplicate t and e across horizon (each timestep in the action chunk sees the same time t and same context embedding e)
-        t_expand = t.expand(B, N_chunk, 1)   # [B, N_chunk, 1]
-        e_expand = e.unsqueeze(1).expand(B, N_chunk, dim_model)  # [B, N_chunk, dim_model]
-
-        # concat along feature dim
-        inp = torch.cat([x_t, t_expand, e_expand], dim=-1)  # [B, N_chunk, act_dim+1+dim_model]
-
-        # flatten horizon so MLP sees each timestep independently
-        inp = inp.reshape(B*N_chunk, -1)  # [B*N_chunk, act_dim+1+dim_model]
-
-        # predict flows
-        out = self.mlp(inp)  # [B*N_chunk, act_dim]
-
-        # reshape back to chunk
-        out = out.view(B, N_chunk, act_dim)  # [B, N_chunk, act_dim]
+        # Layer normalization for stability
+        out = self.final_norm(x)
         
         return out
 
 
+class FlowHead(nn.Module):     
+    
+    def __init__(self, N_chunk, action_dim, dim_model, dim_feedforward_flow):
+        
+        super().__init__()
+        
+        in_dim = N_chunk*action_dim + dim_model + dim_model  
+        out_dim = N_chunk*action_dim 
+
+        self.mlp_time = nn.Sequential(
+            nn.Linear(dim_model, dim_model),
+            nn.SiLU(),
+            nn.Linear(dim_model, dim_model)
+        )
+
+        self.mlp_flow = nn.Sequential(
+            nn.Linear(in_dim, dim_feedforward_flow),
+            nn.ReLU(),
+            nn.Linear(dim_feedforward_flow, dim_feedforward_flow),
+            nn.ReLU(),
+            nn.Linear(dim_feedforward_flow, out_dim)
+        )
+
+        self.pos_enc1D = PosEmbedding1D(dim_model)
+
+    def forward(self, x_t, t, e):
+
+        B, N_chunk, act_dim = x_t.shape
+        
+        # flatten
+        x_t = x_t.reshape(B, -1)  # [B, N_chunk*act_dim]
+
+        # embed time with sinusoidal embedding + MLP
+        t = t.squeeze(1) # [B, 1]
+        t_embedded = self.pos_enc1D.compute(t)
+        t_embedded = self.mlp_time(t_embedded) # [B, dim_model]
+
+        # concat along feature dim
+        inp = torch.cat([x_t, t_embedded, e], dim=-1)  # [B, N_chunk*act_dim + dim_model + dim_model]
+
+        # predict flows
+        out = self.mlp_flow(inp)  # [B, N_chunk*act_dim]
+
+        # reshape back to chunk
+        out = out.view(B, N_chunk, act_dim)  # [B, N_chunk, act_dim]
+
+        return out
+    
+
 class PosEmbedding1D():
 
-    """
-    1D sinusoidal positional embeddings logic
-    """
+    def __init__(self, d_model, temperature=10000):
 
-    def __init__(self):
+        self.d_model = d_model
+        self.temperature = temperature
 
-        # params
-        self.temperature = 10000 # ratio for the geometric progression in sinusoid frequencies
+    def compute(self, x):
 
-    def compute(self, batch, seq_length, d_model, device=None):
-
-        # Set device
-        device = device or torch.device('cpu')
-
-        # compute positions and frequencies
-        pos = torch.arange(seq_length, device=device).unsqueeze(1)             # [seq_length, 1]
-        i = torch.arange(d_model, device=device).unsqueeze(0)                  # [1, d_model]
-        frequencies = 1.0 / (self.temperature ** (2 * (i//2) / d_model))   # [1, d_model] --> [f0,f0,f1,f1,...]
-
-        # apply formula: even index -> sin, odd index -> cos
-        angle_rads = pos * frequencies # [seq_length, d_model] --> [pos*f0,pos*f0,pos*f1,pos*f1,...]
-        encodings = torch.zeros_like(angle_rads) # [seq_length, d_model]
-        encodings[:, 0::2] = torch.sin(angle_rads[:, 0::2]) # even (slicing syntax -> start:stop:step)
-        encodings[:, 1::2] = torch.cos(angle_rads[:, 1::2]) # odd  (slicing syntax -> start:stop:step))
+        # x: [B, 1] (used in flow matching) o [seq_len] (used in transformers tokens)
+        device = x.device
+        half_dim = self.d_model // 2
         
-        return encodings.unsqueeze(0).expand(batch, -1, -1) # [batch, seq_length, d_model]
-
-
+        # exponent formula: 2 * i / d_model  with i in [0, half_dim]
+        exponent = 2 * torch.arange(half_dim, dtype=torch.float32, device=device) / self.d_model
+        inv_freq = 1.0 / (self.temperature ** exponent)
+        
+        if x.ndim == 1:
+            x = x.unsqueeze(1) # [seq_len, 1] or [B, 1]
+            
+        # [seq_len, 1] * [1, half_dim] -> [seq_len, half_dim] or
+        # [B, 1] * [1, half_dim] -> [B, half_dim]
+        angle_rads = x * inv_freq.unsqueeze(0)
+        
+        # final embedding: [sin, sin, cos, cos, ..]
+        return torch.cat([torch.sin(angle_rads), torch.cos(angle_rads)], dim=-1) # [seq_len or B, d_model]
+    
 class PosEmbedding2D():
 
     """
@@ -535,7 +501,6 @@ class PosEmbedding2D():
     def __init__(self):
 
         # params
-        self.two_pi = 2 * math.pi
         self.temperature = 10000 # ratio for the geometric progression in sinusoid frequencies
     
     def compute(self, B, C, H, W, device=None):
@@ -543,42 +508,34 @@ class PosEmbedding2D():
         # Set device
         device = device or torch.device('cpu')
 
-        # Create 2D positions
-        y_pos = torch.arange(H, dtype=torch.float32, device=device).unsqueeze(1)  # (H,1)
-        x_pos = torch.arange(W, dtype=torch.float32, device=device).unsqueeze(0)  # (1,W)
-
-        # Normalize positions to [0, 2pi]
-        y_pos = y_pos / H * self.two_pi  # (H,1)
-        x_pos = x_pos / W * self.two_pi  # (1,W)
-
-        # Compute inverse frequencies for half of the channels each
+        # Params
         d_model = C // 2
-        assert d_model % 2 == 0, "d_model must be even for sine/cosine pairing in 2D positional encoding"
-        indexes = torch.arange(0, d_model, 2, dtype=torch.float32, device=device) # (d_model/2)
-        inv_freq = 1.0 / (self.temperature ** (indexes / d_model)) # (d_model/2)
+        half_dim = d_model // 2
+        
+        # Compute inverse frequencies
+        exponent = 2 * torch.arange(half_dim, dtype=torch.float32, device=device) / d_model
+        inv_freq = 1.0 / (self.temperature ** exponent)
 
-        # Compute angles (pos*freq) + Expand to H/W dimensions
-        y_angle = y_pos.unsqueeze(2) / inv_freq  # (H,1,d_model/2)
-        x_angle = x_pos.unsqueeze(2) / inv_freq  # (1,W,d_model/2)
+        # Create 2D positions
+        y_pos = torch.arange(H, dtype=torch.float32, device=device)
+        x_pos = torch.arange(W, dtype=torch.float32, device=device)
 
-        # Apply sin/cos alternately
-        y_embed = torch.zeros(H,1,d_model, device=device) # (H,1,d_model)
-        y_embed[:, :, 0::2] = y_angle.sin()
-        y_embed[:, :, 1::2] = y_angle.cos()
+        # Compute angles
+        y_angle = y_pos.unsqueeze(1) * inv_freq.unsqueeze(0) # (H, 1) * (1, half_dim) -> (H, half_dim)
+        x_angle = x_pos.unsqueeze(1) * inv_freq.unsqueeze(0) # (W, 1) * (1, half_dim) -> (W, half_dim)
 
-        x_embed = torch.zeros(1,W,d_model, device=device) # (1,W,d_model)
-        x_embed[:, :, 0::2] = x_angle.sin()
-        x_embed[:, :, 1::2] = x_angle.cos()
+        # Generate embeddings with format [sin, sin, cos, cos])
+        y_emb = torch.cat([y_angle.sin(), y_angle.cos()], dim=-1) # (H, d_model)
+        x_emb = torch.cat([x_angle.sin(), x_angle.cos()], dim=-1) # (W, d_model)
 
-        # Broadcast to (H,W,d_model)
-        y_embed = y_embed.expand(H,W,d_model)
-        x_embed = x_embed.expand(H,W,d_model)
+        # Expand to H/W dimensions
+        y_emb2d = y_emb.view(H, 1, d_model).expand(H, W, d_model) # (H, W, d_model)
+        x_emb2d = x_emb.view(1, W, d_model).expand(H, W, d_model) # (H, W, d_model)
 
-        # Concatenate along channel dim
-        # --> i.e with C=8: cell (i,j) has features: [sin(i*f0) cos(i*f0) sin(i*f1) cos(i*f1) | sin(j*f0) cos(j*f0) sin(j*f1) cos(j*f1)]
-        pos_embed = torch.cat([y_embed, x_embed], dim=-1)  # (H,W,C)
+        # Concatenate along channel 
+        pos_embed = torch.cat([y_emb2d, x_emb2d], dim=-1) # (H, W, C)
 
-        # Add batch dim and permute to (B,C,H,W)
-        pos_embed = pos_embed.permute(2,0,1).unsqueeze(0).expand(B,-1,-1,-1)  # (B,C,H,W)
-
-        return pos_embed
+        # Add batch dim and permute 
+        pos_embed = pos_embed.permute(2, 0, 1).unsqueeze(0).expand(B, -1, -1, -1)
+        
+        return pos_embed # (B,C,H,W)

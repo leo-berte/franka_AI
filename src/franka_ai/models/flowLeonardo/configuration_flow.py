@@ -29,8 +29,11 @@ class FlowConfig(PreTrainedConfig):
     replace_final_stride_with_dilation: int = False
     # Transformer architecture params
     dim_model: int = 512
-    nhead: int = 4
+    dim_feedforward_tf: int = 3200
+    nhead: int = 8
     num_layers: int = 4
+    # Flow Head
+    dim_feedforward_flow: int = 1024 # 512*3
     # Flow inference
     denoising_steps: int = 20
 
