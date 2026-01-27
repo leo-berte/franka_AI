@@ -4,10 +4,10 @@
 
 training:
 
-  training_steps: 3000    # number of training steps
+  training_steps: 5000    # number of training steps
   log_freq: 200           # logs train loss, gradNorm, lr
   eval_freq: 200           # logs eval loss
-  save_ckpt_freq: 3000     # save checkpoints
+  save_ckpt_freq: 5000     # save checkpoints
 
 
 # --------
@@ -48,13 +48,13 @@ policies:
       # learning_rate: 0.00001
       # weight_decay: 0.001
       learning_rate: 0.0001
-      weight_decay: 0.001
+      weight_decay: 0.02 # 0.005
     scheduler:
       lr_warmup_steps: 150 # around 5-10% of training steps
     normalization:
       VISUAL: "MEAN_STD"
-      STATE: "MEAN_STD"
-      ACTION: "MEAN_STD"
+      STATE: "MIN_MAX"
+      ACTION: "MIN_MAX"
 
   template:
 

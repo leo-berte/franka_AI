@@ -88,7 +88,8 @@ def make_dataloader(
             raise ValueError(f"num_train_episodes ({num_train_episodes}) + num_val_episodes ({num_val_episodes}) > num_episodes ({num_episodes})")
         train_episodes = episode_ids[:num_train_episodes] 
         val_episodes = episode_ids[num_train_episodes:num_train_episodes + num_val_episodes]
-        print("Train episodes indeces: ", train_episodes)
+        print("Training episodes indeces: ", train_episodes)
+        print("Validation episodes indeces: ", val_episodes)
 
     # Load the raw dataset (hub or local)
     train_ds = LeRobotDatasetPatch(

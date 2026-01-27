@@ -33,9 +33,9 @@ class FlowConfig(PreTrainedConfig):
     nhead: int = 8
     num_layers: int = 4
     # Flow Head
-    dim_feedforward_flow: int = 1024 # 512*3
+    dim_feedforward_flow: int = 512*4
     # Flow inference
-    denoising_steps: int = 20
+    denoising_steps: int = 50
 
     def __post_init__(self):
 
