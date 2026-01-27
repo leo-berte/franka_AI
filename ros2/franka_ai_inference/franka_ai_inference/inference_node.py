@@ -26,6 +26,9 @@ from franka_ai.inference.utils import get_configs_inference
 from franka_ai.models.factory import get_policy_class
 from franka_ai.models.utils import get_configs_models
 
+# debug
+import imageio
+
 
 # TODO:
 
@@ -57,8 +60,18 @@ ros2 topic hz /cartesian_impedance/equilibrium_pose_offline_test
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act3_2026-01-21_05-05-25" # works only 1 corner
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act5_2026-01-21_08-57-46" # barely work only 2 corners
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act8_2026-01-21_12-47-17" # barely work only 2 corners
-checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act9_2026-01-21_16-38-27" # barely work only 2 corners
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act9_2026-01-21_16-38-27" # barely work only 2 corners
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/"
+
+# with grasp 100k
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act3B_2026-01-22_17-51-07"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act9B_2026-01-22_17-51-07"
+
+# outliers
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_outlier_act_config_cubes_with_grasp_outliers/config_act9B_2026-01-23_07-50-29"
+
+# with grasp 100k new
+checkpoint_rel_path = "../workspace/outputs/checkpoints/new_cubes_grasp_small_outliers_act_config_new_cubes_grasp_small_outliers/config_act11_2026-01-23_17-06-05"
 
 
 
@@ -214,6 +227,9 @@ class FrankaInference(Node):
                                                        self.fps_sampling_chunk)
 
         print("FrankaInference node initialized successfully")
+
+        # debug
+        self.video_writer = imageio.get_writer('/workspace/outputs/test.mp4', fps=10)
 
     def webcam1_callback(self, msg):
 
@@ -632,6 +648,16 @@ class FrankaInference(Node):
 
         # # Profile time for inference
         # t0 = time.perf_counter()
+
+        
+        # # debug
+        # if self.current_step == 100:
+        #     self.video_writer.close()
+        # elif self.current_step < 100:
+        #     # print(obs["observation.images.front_cam1"][0,0].transpose(0, 2).shape, obs["observation.images.front_cam1"].dtype)
+        #     self.video_writer.append_data(np.transpose(obs["observation.images.front_cam1"][0,0].cpu().numpy(), (1, 2, 0)))
+
+
 
         # Inference
         with torch.inference_mode():

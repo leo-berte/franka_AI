@@ -100,18 +100,18 @@ class CustomTransforms():
                 p=vis_aug_cfg["color_jitter"]["p"],
                 same_on_batch=True,
                 ),
-            K.RandomGaussianBlur(
-                kernel_size=tuple(vis_aug_cfg["gaussian_blur"]["kernel_size"]),
-                sigma=tuple(vis_aug_cfg["gaussian_blur"]["sigma"]),
-                p=vis_aug_cfg["gaussian_blur"]["p"],
-                same_on_batch=True,
-                ),
-            K.RandomAffine(
-                degrees=vis_aug_cfg["random_affine"]["degrees"],
-                translate=tuple(vis_aug_cfg["random_affine"]["translate"]),
-                p=vis_aug_cfg["random_affine"]["p"],
-                same_on_batch=True,
-                )
+            # K.RandomGaussianBlur(
+            #     kernel_size=tuple(vis_aug_cfg["gaussian_blur"]["kernel_size"]),
+            #     sigma=tuple(vis_aug_cfg["gaussian_blur"]["sigma"]),
+            #     p=vis_aug_cfg["gaussian_blur"]["p"],
+            #     same_on_batch=True,
+            #     ),
+            # K.RandomAffine(
+            #     degrees=vis_aug_cfg["random_affine"]["degrees"],
+            #     translate=tuple(vis_aug_cfg["random_affine"]["translate"]),
+            #     p=vis_aug_cfg["random_affine"]["p"],
+            #     same_on_batch=True,
+            #     )
         )
 
         # define full pipeline for both training and inference

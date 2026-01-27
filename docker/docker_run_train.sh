@@ -11,7 +11,7 @@ docker run -it --rm \
     --shm-size=32g \
     -e DISPLAY=$DISPLAY \
     -e QT_X11_NO_MITSHM=1 \
-    -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v $ROOT_DIR/src/franka_ai:/workspace/src/franka_ai \
     -v $ROOT_DIR/configs:/workspace/configs \
     -v $ROOT_DIR/setup.py:/workspace/setup.py \
@@ -20,3 +20,5 @@ docker run -it --rm \
     -v $ROOT_DIR/outputs:/workspace/outputs \
     -w /workspace \
     franka_ai_train
+
+
