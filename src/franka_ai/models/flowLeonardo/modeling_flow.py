@@ -23,14 +23,13 @@ from lerobot.common.policies.pretrained import PreTrainedPolicy
 # sampling lontano dai bordi (tanto rumore pure, inutile) +  weight on loss based on time t 
 # --> (xke ai bordi ho rumore pure e loss alta, rischio che mi dia contributo enorme in update pesi anche se quella loss è "cieca")
 # change numer denois steps + RK 
+# still spikes, so back to papers + github implementations
 
 
 
 # TODO:
 
 # usa mlp pure dopo trasformer invece di fm
-# metti 2 tricks sul tempo insieme + remove MLP e tiene solo pos encoding per t + film modulation for time
-
 
 # try to plot offline evaluation for cubes_with_grasps
 # training senza augmentation??
@@ -271,13 +270,13 @@ class Flow(nn.Module):
         # target flow (ground truth vector field)
         v_target = batch["action"] - action_chunk_src # [B, N_chunk, act_dim] 
 
-        # sample random time t ~ U(0,1) --> BASELINE
-        t = torch.rand(B, 1, 1, device=device)  # each sample has its own time
+        # # sample random time t ~ U(0,1) --> BASELINE
+        # t = torch.rand(B, 1, 1, device=device)  # each sample has its own time
 
-        # # sample random time t (trick: avoid sampling frequently near borders 0.0 & 1.0)
-        # m = torch.randn(B, 1, 1, device=device) # gaussian distribution
-        # sigma = 1.0 # the lower this param, the more the values will be around 0.5
-        # t = torch.sigmoid(m * sigma) # result will be again in [0,1]
+        # sample random time t (trick: avoid sampling frequently near borders 0.0 & 1.0)
+        m = torch.randn(B, 1, 1, device=device) # gaussian distribution
+        sigma = 1.0 # the lower this param, the more the values will be around 0.5
+        t = torch.sigmoid(m * sigma) # result will be again in [0,1]
 
         # interpolation toward noise
         x_t = action_chunk_src + t * v_target # [B, N_chunk, act_dim] 
@@ -441,7 +440,8 @@ class TransformerEncoder(nn.Module):
 
         # x = torch.cat([cls_tokens, obs_features, img_features, ee_embeds], dim=1) # [B, seq_length=1+n_hist+N_cam*N_HIST*H'*W', dim_model]
         x = torch.cat([cls_tokens, obs_features, img_features], dim=1) # [B, seq_length=1+n_hist+N_cam*N_HIST*H'*W', dim_model]
-
+        # x = torch.cat([cls_tokens, obs_features], dim=1) #  DEBUG: NO IMAGE TOKENS
+        
         # pass through transformer
         x = self.transformer_encoder(x) # [B, seq_length, dim_model]
         x = x[:,0,:]  # take only CLS token as summary --> [B, dim_model]
@@ -451,84 +451,28 @@ class TransformerEncoder(nn.Module):
         
         return out
 
-# # FILM
-# class FlowHead(nn.Module):     
-    
-#     def __init__(self, N_chunk, action_dim, dim_model, dim_feedforward_flow):
-        
-#         super().__init__()
-        
-#         in_dim = N_chunk*action_dim + dim_model  
-#         out_dim = N_chunk*action_dim 
-
-#         # FiLM modulation to handle time information
-#         self.film_gen = nn.Sequential(
-#             nn.SiLU(),
-#             nn.Linear(dim_model, 2 * dim_model) # outputs both gamma & beta
-#         )
-
-#         self.mlp_flow = nn.Sequential(
-#             nn.Linear(in_dim, dim_feedforward_flow),
-#             nn.LayerNorm(dim_feedforward_flow), # since I concateneted different sources, better to re-normalize to N(0, I)
-#             nn.SiLU(), # ReLU
-#             nn.Linear(dim_feedforward_flow, dim_feedforward_flow),
-#             nn.SiLU(), # ReLU
-#             nn.Linear(dim_feedforward_flow, out_dim)
-#         )
-
-#         self.pos_enc1D = PosEmbedding1D(dim_model)
-
-#     def forward(self, x_t, t, e):
-
-#         B, N_chunk, act_dim = x_t.shape
-        
-#         # flatten
-#         x_flat = x_t.reshape(B, -1)  # [B, N_chunk*act_dim]
-
-#         # embed time with sinusoidal embedding + MLP
-#         t = t.squeeze(1) # [B, 1]
-#         t_embedded = self.pos_enc1D.compute(t) # [B, dim_model]
-
-#         # generate gamma and beta
-#         film_params = self.film_gen(t_embedded) # [B, 2 * dim_model]
-#         gamma, beta = torch.chunk(film_params, 2, dim=-1) # each one is: [B, dim_model] 
-        
-#         # use t informations to scale 'e' tensor
-#         e_modulated = e * (1 + gamma) + beta # [B, dim_model]
-
-#         # concat along feature dim
-#         inp = torch.cat([x_flat, e_modulated], dim=-1)  # [B, N_chunk*act_dim + dim_model]
-
-#         # predict flows
-#         out = self.mlp_flow(inp)  # [B, N_chunk*act_dim]
-
-#         # reshape back to chunk
-#         out = out.view(B, N_chunk, act_dim)  # [B, N_chunk, act_dim]
-
-#         return out
-    
-# NORMAL
+# FILM
 class FlowHead(nn.Module):     
     
     def __init__(self, N_chunk, action_dim, dim_model, dim_feedforward_flow):
         
         super().__init__()
         
-        in_dim = N_chunk*action_dim + dim_model + dim_model  
+        in_dim = N_chunk*action_dim + dim_model  
         out_dim = N_chunk*action_dim 
 
-        self.mlp_time = nn.Sequential(
-            nn.Linear(dim_model, dim_model),
+        # FiLM modulation to handle time information
+        self.film_gen = nn.Sequential(
             nn.SiLU(),
-            nn.Linear(dim_model, dim_model)
+            nn.Linear(dim_model, 2 * dim_model) # outputs both gamma & beta
         )
 
         self.mlp_flow = nn.Sequential(
             nn.Linear(in_dim, dim_feedforward_flow),
             nn.LayerNorm(dim_feedforward_flow), # since I concateneted different sources, better to re-normalize to N(0, I)
             nn.SiLU(), # ReLU
-            nn.Linear(dim_feedforward_flow, dim_feedforward_flow),
-            nn.SiLU(), # ReLU
+            # nn.Linear(dim_feedforward_flow, dim_feedforward_flow),
+            # nn.SiLU(), # ReLU
             nn.Linear(dim_feedforward_flow, out_dim)
         )
 
@@ -539,15 +483,21 @@ class FlowHead(nn.Module):
         B, N_chunk, act_dim = x_t.shape
         
         # flatten
-        x_t = x_t.reshape(B, -1)  # [B, N_chunk*act_dim]
+        x_flat = x_t.reshape(B, -1)  # [B, N_chunk*act_dim]
 
         # embed time with sinusoidal embedding + MLP
         t = t.squeeze(1) # [B, 1]
-        t_embedded = self.pos_enc1D.compute(t)
-        t_embedded = self.mlp_time(t_embedded) # [B, dim_model]
+        t_embedded = self.pos_enc1D.compute(t) # [B, dim_model]
+
+        # generate gamma and beta
+        film_params = self.film_gen(t_embedded) # [B, 2 * dim_model]
+        gamma, beta = torch.chunk(film_params, 2, dim=-1) # each one is: [B, dim_model] 
+        
+        # use t informations to scale 'e' tensor
+        e_modulated = e * (1 + gamma) + beta # [B, dim_model]
 
         # concat along feature dim
-        inp = torch.cat([x_t, t_embedded, e], dim=-1)  # [B, N_chunk*act_dim + dim_model + dim_model]
+        inp = torch.cat([x_flat, e_modulated], dim=-1)  # [B, N_chunk*act_dim + dim_model]
 
         # predict flows
         out = self.mlp_flow(inp)  # [B, N_chunk*act_dim]
@@ -556,6 +506,56 @@ class FlowHead(nn.Module):
         out = out.view(B, N_chunk, act_dim)  # [B, N_chunk, act_dim]
 
         return out
+    
+# # NORMAL
+# class FlowHead(nn.Module):     
+    
+#     def __init__(self, N_chunk, action_dim, dim_model, dim_feedforward_flow):
+        
+#         super().__init__()
+        
+#         in_dim = N_chunk*action_dim + dim_model + dim_model  
+#         out_dim = N_chunk*action_dim 
+
+#         # self.mlp_time = nn.Sequential(
+#         #     nn.Linear(dim_model, dim_model),
+#         #     nn.SiLU(),
+#         #     nn.Linear(dim_model, dim_model)
+#         # )
+
+#         self.mlp_flow = nn.Sequential(
+#             nn.Linear(in_dim, dim_feedforward_flow),
+#             nn.LayerNorm(dim_feedforward_flow), # since I concateneted different sources, better to re-normalize to N(0, I)
+#             nn.SiLU(), # ReLU
+#             # nn.Linear(dim_feedforward_flow, dim_feedforward_flow), # TO REMOVE
+#             # nn.SiLU(), # ReLU                                      # TO REMOVE
+#             nn.Linear(dim_feedforward_flow, out_dim)
+#         )
+
+#         self.pos_enc1D = PosEmbedding1D(dim_model)
+
+#     def forward(self, x_t, t, e):
+
+#         B, N_chunk, act_dim = x_t.shape
+        
+#         # flatten
+#         x_t = x_t.reshape(B, -1)  # [B, N_chunk*act_dim]
+
+#         # embed time with sinusoidal embedding + MLP
+#         t = t.squeeze(1) # [B, 1]
+#         t_embedded = self.pos_enc1D.compute(t)
+#         # t_embedded = self.mlp_time(t_embedded) # [B, dim_model]
+
+#         # concat along feature dim
+#         inp = torch.cat([x_t, t_embedded, e], dim=-1)  # [B, N_chunk*act_dim + dim_model + dim_model]
+
+#         # predict flows
+#         out = self.mlp_flow(inp)  # [B, N_chunk*act_dim]
+
+#         # reshape back to chunk
+#         out = out.view(B, N_chunk, act_dim)  # [B, N_chunk, act_dim]
+
+#         return out
     
 
 class PosEmbedding1D():

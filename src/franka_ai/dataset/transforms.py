@@ -83,40 +83,37 @@ class CustomTransforms():
         # image augmentations
         vis_aug_cfg = transforms_cfg["visual"]["augmentations"]
         
-        # convert img to [0,1] + resize (both training and inference)
-        base_tf_pre = torch.nn.Sequential(
+        # training image augmentations pipeline
+        self.img_tf_train = K.VideoSequential(
             K.Resize(tuple(self.img_resize)),
-            # K.Normalize(mean=torch.tensor([0.0, 0.0, 0.0]),
-            #             std=torch.tensor([255.0, 255.0, 255.0]))
-        )
-
-        # training image augmentations
-        train_tf = torch.nn.Sequential(
             K.ColorJitter(
                 brightness=vis_aug_cfg["color_jitter"]["brightness"],
                 contrast=vis_aug_cfg["color_jitter"]["contrast"],
                 saturation=vis_aug_cfg["color_jitter"]["saturation"],
                 hue=vis_aug_cfg["color_jitter"]["hue"],
                 p=vis_aug_cfg["color_jitter"]["p"],
-                same_on_batch=True,
+                same_on_batch=False,
                 ),
             K.RandomGaussianBlur(
                 kernel_size=tuple(vis_aug_cfg["gaussian_blur"]["kernel_size"]),
                 sigma=tuple(vis_aug_cfg["gaussian_blur"]["sigma"]),
                 p=vis_aug_cfg["gaussian_blur"]["p"],
-                same_on_batch=True,
+                same_on_batch=False,
                 ),
             K.RandomAffine(
                 degrees=vis_aug_cfg["random_affine"]["degrees"],
                 translate=tuple(vis_aug_cfg["random_affine"]["translate"]),
                 p=vis_aug_cfg["random_affine"]["p"],
-                same_on_batch=True,
-                )
+                same_on_batch=False,
+                ),
+            data_format="BTCHW", 
+            same_on_frame=True # apply same transform to all the history
         )
 
-        # define full pipeline for both training and inference
-        self.img_tf_inference = torch.nn.Sequential(base_tf_pre)
-        self.img_tf_train = torch.nn.Sequential(base_tf_pre, train_tf)
+        # inference image augmentations pipeline
+        self.img_tf_inference = K.VideoSequential(
+            K.Resize(tuple(self.img_resize))
+        )
 
         # extract dataset features to be removed
         self.skip_features = []
@@ -149,7 +146,7 @@ class CustomTransforms():
         elif isinstance(value, np.ndarray):
             return (value > gripper_half_width).astype(np.float32)
         else:
-            return float(value > gripper_half_width)    
+            return float(value > gripper_half_width)   
 
     def transform(self, sample):
 
@@ -177,21 +174,13 @@ class CustomTransforms():
                 
                 v = v.to(torch.float32) # convert data to tensor float32
 
-                pre_shape = v.shape[:-3]  # it could be (B, N_h) or (B,)
-
-                # flatten temporal dimension
-                v_flat = v.reshape(-1, *v.shape[-3:])  # (*, C, H, W)
-
-                # apply augmentations
-                v_aug = self.img_tf_train(v_flat) if self.train else self.img_tf_inference(v_flat)
-                v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST
-                
-                # reshape back
-                v_aug = v_aug.reshape(*pre_shape, *v_aug.shape[-3:])
-
                 # ensure images always have time dimension
-                if v_aug.dim() == 4:  # (B, C, H, W)
-                    v_aug = v_aug.unsqueeze(1)  # (B, 1, C, H, W)
+                if v.dim() == 4:  # (B, C, H, W)
+                    v = v.unsqueeze(1)  # (B, 1, C, H, W)
+
+                # keep same augmentations along history frames, while vary for each sample in the batch
+                v_aug = self.img_tf_train(v) if self.train else self.img_tf_inference(v) # (B, N_h, C, H, W)
+                v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST
 
                 sample[k] = v_aug
 

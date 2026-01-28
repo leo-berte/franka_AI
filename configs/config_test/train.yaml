@@ -5,7 +5,7 @@
 training:
 
   training_steps: 5000    # number of training steps
-  log_freq: 200           # logs train loss, gradNorm, lr
+  log_freq: 200            # logs train loss, gradNorm, lr
   eval_freq: 200           # logs eval loss
   save_ckpt_freq: 5000     # save checkpoints
 
@@ -43,12 +43,8 @@ policies:
   flowLeonardo:
 
     optimizer:
-      # learning_rate: 0.0001
-      # weight_decay: 0.000001
-      # learning_rate: 0.00001
-      # weight_decay: 0.001
       learning_rate: 0.0001
-      weight_decay: 0.02 # 0.005
+      weight_decay: 0.05
     scheduler:
       lr_warmup_steps: 150 # around 5-10% of training steps
     normalization:
