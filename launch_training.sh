@@ -3,7 +3,7 @@
 ## NOTE: Check if it creates the same folder name for checkpoints since when 2 trainings are launched together ##
 
 DATA=/mnt/Data/datasets/lerobot/one_bag
-POLICY=act
+POLICY=flowLeonardo
 
 # python src/franka_ai/dataset/generate_updated_stats.py --dataset $DATA --config config_test
 python src/franka_ai/training/train.py --dataset $DATA --config config_test --policy $POLICY

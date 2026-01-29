@@ -35,7 +35,9 @@ class FlowConfig(PreTrainedConfig):
     # Flow Head
     dim_feedforward_flow: int = 512*4
     # Flow inference
-    denoising_steps: int = 50
+    denoising_steps: int = 100
+    use_fixed_src_dist = True # decide whether to start always from same source distribution during inference
+
 
     def __post_init__(self):
 

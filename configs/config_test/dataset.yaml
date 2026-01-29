@@ -23,12 +23,13 @@ dataset:
 
   features:
     VISUAL:
-      - observation.images.front_cam1
+      []
     STATE:
       - observation.state
     ACTION:
       - action
     REMOVE:
+      - observation.images.front_cam1
       - observation.images.front_cam2
       - observation.images.front_cam3
       - observation.images.gripper_camera
@@ -62,7 +63,7 @@ dataset:
 transforms:
 
   visual:
-    img_resize: [210, 280] 
+    img_resize: [120, 160] # [210, 280] 
     normalize: false
     augmentations:
       color_jitter:
