@@ -18,6 +18,7 @@ import torch
 import numpy as np
 from math import ceil
 import time
+import imageio
 
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.utils.robotics_math import *
@@ -26,13 +27,11 @@ from franka_ai.inference.utils import get_configs_inference
 from franka_ai.models.factory import get_policy_class
 from franka_ai.models.utils import get_configs_models
 
-# debug
-import imageio
-
 
 # TODO:
 
 # 1) traj stitching
+# 2) add video saving in checkpoint output folder
 
 
 """
@@ -43,7 +42,6 @@ Run rqt_plot: ros2 run plotjuggler plotjuggler
 ros2 topic hz /panda_gripper/width
 ros2 topic hz /cartesian_impedance/equilibrium_pose_offline_test
 """
-
 
 ## Set relative path to inference.yaml before running the node ##
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/one_bag_act_2026-01-07_18-28-18" # PC PERSONALE E ROSBAG
@@ -70,8 +68,60 @@ ros2 topic hz /cartesian_impedance/equilibrium_pose_offline_test
 # outliers
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_outlier_act_config_cubes_with_grasp_outliers/config_act9B_2026-01-23_07-50-29"
 
-# with grasp 100k new
-checkpoint_rel_path = "../workspace/outputs/checkpoints/new_cubes_grasp_small_outliers_act_config_new_cubes_grasp_small_outliers/config_act11_2026-01-23_17-06-05"
+# with grasp 100k new (4 episode only)
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/new_cubes_grasp_small_outliers_act_config_new_cubes_grasp_small_outliers/config_act11_2026-01-27_16-36-46"
+
+# grasp2pos
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_2pos_act_grasp_2pos/config_act3_2026-01-28_14-14-15"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_2pos_act_grasp_2pos/config_act9_2026-01-28_14-15-04"
+
+
+# grasp2pos_outliers
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_2pos_outliers_act_grasp_2pos_outliers/config_act3_2026-01-29_16-26-15"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_2pos_outliers_act_grasp_2pos_outliers/config_act9_2026-01-29_16-26-18"
+
+# grasp2pos_new
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_2pos_new_act_grasp_2pos_new/config_act3_2026-01-30_16-53-46"
+
+# grasp2pos_new_outliers
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_2pos_new_outliers_act_grasp_2pos_new_outliers/config_act3_2026-01-30_16-53-09"
+
+# grasp 4pos
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_act_grasp_4pos_new/config_act3_2026-02-02_19-07-52"
+
+# grasp 4pos outliers
+checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act3_2026-02-02_19-05-33"
+
+
+
+
+# step:  145
+# gripper poly:  tensor(-0.0022)
+# gripper post:  tensor(0.)
+# step:  146
+# gripper poly:  tensor(-0.0052)
+# gripper post:  tensor(0.)
+# step:  147
+# gripper poly:  tensor(-0.0065)
+# gripper post:  tensor(0.)
+# step:  148
+# gripper poly:  tensor(0.0514)
+# gripper post:  tensor(0.)
+# step:  149
+# gripper poly:  tensor(1.0054)
+# gripper post:  tensor(1.)
+# step:  150
+# gripper poly:  tensor(-0.0011)
+# gripper post:  tensor(0.)
+# step:  151
+# gripper poly:  tensor(0.0016)
+# gripper post:  tensor(0.)
+# step:  152
+# gripper poly:  tensor(0.0044)
+# gripper post:  tensor(0.)
+# step:  153
+# gripper poly:  tensor(0.0053)
+# gripper post:  tensor(0.)
 
 
 
@@ -212,7 +262,7 @@ class FrankaInference(Node):
 
         # Load policy
         PolicyClass = get_policy_class(policy_name)
-        self.policy = PolicyClass.from_pretrained(f"{checkpoint_rel_path}/best_model.pt")
+        self.policy = PolicyClass.from_pretrained(f"{checkpoint_rel_path}/step_00090000.pt") # best_model.pt
         self.policy.reset() # reset the policy to prepare for rollout
 
         # Compute policy steps
@@ -663,7 +713,7 @@ class FrankaInference(Node):
         with torch.inference_mode():
             action = self.policy.select_action(obs) # (B, N_hist, D) --> (B, D)
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (B, N_chunk, D)
-            print("step: ", self.current_step)
+            # print("step: ", self.current_step)
             # print("policy action: ", action)
 
         # # Profile time for inference
@@ -709,7 +759,9 @@ class FrankaInference(Node):
                 part = get_absolute_pose_wrt_last_state(pos, R, self.p_base.to("cpu"), self.R_base.to("cpu")) # quaternion notation for orientation
 
             elif action_name == "gripper":
+                # print("gripper poly: ", action[-1])
                 action[-1] = CustomTransforms.gripper_action_continuous2discrete(action[-1]) # Convert gripper in binary {0,1}
+                # print("gripper post: ", action[-1])
                 part = action[-1:]
 
             # Add part to state vector

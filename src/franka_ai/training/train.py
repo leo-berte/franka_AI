@@ -20,10 +20,6 @@ from franka_ai.training.utils import *
 from franka_ai.models.utils import get_configs_models
 from franka_ai.models.factory import get_policy_config_class, make_policy, get_policy_class
 
-# added to debug
-import numpy as np
-import torchvision
-
 
 """
 Run the code: 
@@ -260,11 +256,6 @@ def train():
             batch = transforms_train.transform(batch) # in/out: (B, N_h, ...)
 
             # print("transform", {k:v.shape for k,v in batch.items() if isinstance(v, torch.Tensor)})
-
-            # # debug to visualise images
-            # img = batch["observation.images.front_cam1"][:,0]
-            # torchvision.utils.save_image(img, "/workspace/outputs/test.png", nrow=2)
-            # break
 
             # Use Automatic Mixed Precision (AMP)
             with torch.amp.autocast(device_type="cuda", enabled=use_amp):

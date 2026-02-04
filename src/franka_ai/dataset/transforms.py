@@ -98,7 +98,7 @@ class CustomTransforms():
                 saturation=vis_aug_cfg["color_jitter"]["saturation"],
                 hue=vis_aug_cfg["color_jitter"]["hue"],
                 p=vis_aug_cfg["color_jitter"]["p"],
-                same_on_batch=True,
+                same_on_batch=False, # True
                 ),
             # K.RandomGaussianBlur(
             #     kernel_size=tuple(vis_aug_cfg["gaussian_blur"]["kernel_size"]),
