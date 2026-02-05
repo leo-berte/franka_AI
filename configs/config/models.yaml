@@ -29,7 +29,7 @@ flowLeonardo:
 
   params:
     N_history: 1
-    N_chunk: 50   
+    N_chunk: 100   
     n_action_steps: 25
 
   sampling:

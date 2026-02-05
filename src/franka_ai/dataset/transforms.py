@@ -180,7 +180,7 @@ class CustomTransforms():
 
                 # keep same augmentations along history frames, while vary for each sample in the batch
                 v_aug = self.img_tf_train(v) if self.train else self.img_tf_inference(v) # (B, N_h, C, H, W)
-                v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST
+                # v_aug = torch.zeros_like(v_aug) # TEMP FOR KINEMATICS ONLY TEST
 
                 sample[k] = v_aug
 
