@@ -82,10 +82,12 @@ def make_dataloader(
         train_episodes=selected_episodes
         val_episodes=selected_episodes
     else:
-        num_train_episodes = max(1, int(num_episodes * train_split_ratio))
-        num_val_episodes = max(1, int(num_episodes * val_split_ratio))
+        num_train_episodes = int(num_episodes * train_split_ratio)
+        num_val_episodes = int(num_episodes * val_split_ratio)
         if num_train_episodes +  num_val_episodes > num_episodes:
-            raise ValueError(f"num_train_episodes ({num_train_episodes}) + num_val_episodes ({num_val_episodes}) > num_episodes ({num_episodes})")
+            raise ValueError(f"num_train_episodes ({num_train_episodes}) + num_val_episodes ({num_val_episodes}) > num_episodes ({num_episodes}).")
+        if num_train_episodes < 1 or num_val_episodes < 1:
+            raise ValueError(f"Both num_train_episodes ({num_train_episodes}) and num_val_episodes ({num_val_episodes}) must be greater than zero.")
         train_episodes = episode_ids[:num_train_episodes] 
         val_episodes = episode_ids[num_train_episodes:num_train_episodes + num_val_episodes]
         print("Training episodes indeces: ", train_episodes)

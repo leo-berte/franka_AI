@@ -73,6 +73,7 @@ class ACTPolicy(PreTrainedPolicy):
         )
 
         self.model = ACT(config)
+        self.count_parameters()
 
         if config.temporal_ensemble_coeff is not None:
             self.temporal_ensembler = ACTTemporalEnsembler(config.temporal_ensemble_coeff, config.chunk_size)
@@ -100,6 +101,20 @@ class ACTPolicy(PreTrainedPolicy):
                 "lr": self.config.optimizer_lr_backbone,
             },
         ]
+    
+    # PATCH
+    def count_parameters(self):
+        
+        """Print number of trainable parameters in the policy."""
+
+        # Count total number of trainable parameters
+        params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        print(f"Total number of trainable parameters: {params:,}")
+    
+        # Count number of trainable parameters in each sub-module
+        for name, module in self.model.named_children():
+            sub_params = sum(p.numel() for p in module.parameters() if p.requires_grad)
+            print(f"  - {name}: {sub_params:,}")
 
     def reset(self):
         """This should be called whenever the environment is reset."""
@@ -179,9 +194,6 @@ class ACTPolicy(PreTrainedPolicy):
         # Action queue logic for n_action_steps > 1. When the action_queue is depleted, populate it by
         # querying the policy.
         if len(self._action_queue) == 0:
-
-            print("new sequence")
-            
             actions = self.model(batch)[0][:, : self.config.n_action_steps]
 
             # TODO(rcadene): make _forward return output dictionary?

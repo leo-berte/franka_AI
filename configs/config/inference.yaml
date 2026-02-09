@@ -1,4 +1,5 @@
 inference:
+  save_video: True
   offline_test: False
   smooth_output: True
   output_filter_alpha: 0.03

@@ -62,26 +62,26 @@ dataset:
 transforms:
 
   visual:
-    img_resize: [120, 160] 
+    img_resize: [210, 280] 
     normalize: false
     augmentations:
       color_jitter:
-        brightness: 0.1
-        contrast: 0.1
-        saturation: 0.1
+        brightness: 0.2
+        contrast: 0.2
+        saturation: 0.2
         hue: 0.02
         p: 0.5
       gaussian_blur:
         kernel_size: [3, 3]
         sigma: [0.1, 0.5]
-        p: 0.5
+        p: 0.4
       random_affine:
         degrees: 3
         translate: [0.02, 0.02]
-        p: 0.5
+        p: 0.4
 
   orientations: # used only in ee_pose_absolute, NOT in ee_pose_relative
-    type: quaternion # [quaternion, 6D, axis_angle]
+    type: 6D # [quaternion, 6D, axis_angle]
 
   state:
     augmentations:
@@ -90,16 +90,16 @@ transforms:
         joint_torque: 0.2     # σ ≈ Nm
     use_past_actions: False
     include: # define observation state components
-    - q
-    - qdot
+    # - q
+    # - qdot
     # - tau
     # - fext
-    # - ee_pose_absolute
+    - ee_pose_absolute
     # - ee_pose_relative
-    - gripper
+    # - gripper
 
   action:
     include: # define action components (it can be ONLY: [ee_pose_absolute, gripper] or [ee_pose_relative, gripper])
-    - ee_pose_relative 
+    - ee_pose_absolute 
     - gripper
 

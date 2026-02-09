@@ -19,12 +19,12 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                           --checkpoint outputs/checkpoints/one_bag_diffusion_config_test_2026-01-19_16-56-51 \
-                                           --policy act
+                                           --checkpoint outputs/checkpoints/one_bag_flowLeonardo_config_test_2026-02-09_10-01-05 \
+                                           --policy flowLeonardo
 
-python src/franka_ai/inference/evaluate.py --dataset /workspace/data/cubes_with_grasp \
-                                           --checkpoint /workspace/outputs/checkpoints/cubes_no_grasp_act_config_cubes_no_grasp/config_act3_2026-01-20_14-57-38 \
-                                           --policy act
+python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
+                                           --checkpoint /workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-24_21-15-57 \
+                                           --policy diffusion
 """
 
 
@@ -44,7 +44,7 @@ def parse_args():
         help="Absolute path to the checkpoint folder")
     
     parser.add_argument("--policy", type=str, default="diffusion",
-                    choices=["diffusion", "act", "flow"],
+                    choices=["diffusion", "act", "flowLeonardo"],
                     help="Policy name")
     
     args = parser.parse_args()
@@ -167,7 +167,7 @@ def main():
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         model_cfg=model_cfg,
-        selected_episodes=[10] # with seed=50 --> idx=10 val_set, idx=0 train_set
+        selected_episodes=[0] # with seed=50 --> idx=10 val_set, idx=0 train_set
     )
 
     # Save data

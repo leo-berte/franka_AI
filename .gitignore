@@ -7,3 +7,7 @@ data
 # Ignore temporary subfolders inside config/ besides the default config/config/
 configs/*/
 !configs/config/
+
+# Ignore temporary 'launch_training' files inside config/ besides the default launch_training.sh file
+configs/launch_*.sh
+!configs/launch_training.sh

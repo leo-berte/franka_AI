@@ -1,5 +1,6 @@
 import argparse
 import torch
+import torchvision
 
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.dataset.load_dataset import make_dataloader
@@ -9,7 +10,7 @@ from franka_ai.models.utils import get_configs_models
 """
 Run the code: 
 
-python src/franka_ai/tests/test_dataloader.py --dataset /mnt/Data/datasets/lerobot/one_bag --policy act --config test_orientations2/config_rel
+python src/franka_ai/tests/test_dataloader.py --dataset /mnt/Data/datasets/lerobot/one_bag --policy act --config config_test
 python src/franka_ai/tests/test_dataloader.py --dataset /workspace/data/single_outliers --policy diffusion --config config1
 
 Visualize lerobot dataset uploaded in HF:
@@ -18,7 +19,7 @@ python -m lerobot.scripts.visualize_dataset --repo-id lerobot/pusht --episode-in
 
 Visualize custom dataset saved locally:
 
-python -m lerobot.scripts.visualize_dataset --repo-id one_bag --root /mnt/Data/datasets/lerobot/one_bag --episode-index 0
+python -m lerobot.scripts.visualize_dataset --repo-id grasp_2pos_outliers --root /mnt/Data/datasets/lerobot/grasp_2pos_outliers --episode-index 0
 """
 
 
@@ -85,6 +86,10 @@ def main():
 
         # Apply custom transforms
         batch = transforms_train.transform(batch) 
+
+        # # debug to visualise images, use path: "outputs/test.png" OR "/workspace/outputs/test.png"
+        # torchvision.utils.save_image(batch["observation.images.front_cam1"][:,-1], "outputs/batch_images_last.png", nrow=4) # conda env
+        # torchvision.utils.save_image(batch["observation.images.front_cam1"][0,:], "outputs/history_images.png", nrow=4) # conda env
 
         # print all keys in dataset
         for k, v in batch.items():
