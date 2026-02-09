@@ -4,13 +4,14 @@ End-to-end **AI pipeline for robotic manipulation** (covering dataset post-proce
 
 **Key Features**
 
+- Integrated baseline models: ACT and Diffusion Policy via LeRobot 
+- Developed custom models: Transformer Flow-Matching
 - Custom data transforms: multiple pose representations (quaternion / axis-angle / 6D), absolute or relative EE poses, optional past-action conditioning
-- YAML-driven configuration for transforms, training and models (no code changes required)
-- Integrated models: ACT and Diffusion Policy via LeRobot + custom Flow-Matching policy
 - Image augmentation & state noise injection during training
 - Training optimizations: AMP, AdamW, linear + cosine LR scheduling
+- YAML-driven configuration for transforms, training and models parameters (no code changes required)
+- ROS2 real-time inference designed for multi-rate sensors and safe deployment on Franka Panda
 - Fully Dockerized setup for training and inference
-- ROS 2 real-time inference designed for multi-rate sensors and safe deployment on Franka Panda
 
 ## 1. Project structure
 
