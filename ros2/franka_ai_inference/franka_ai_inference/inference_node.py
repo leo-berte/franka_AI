@@ -18,6 +18,7 @@ import torch
 import numpy as np
 from math import ceil
 import time
+import imageio
 
 from franka_ai.dataset.transforms import CustomTransforms
 from franka_ai.utils.robotics_math import *
@@ -31,21 +32,13 @@ from franka_ai.models.utils import get_configs_models
 
 # 1) traj stitching
 
-
 """
 Run: ros2 run franka_ai_inference inference_node --ros-args -p use_sim_time:=true
 Play rosbag: ros2 bag play bag1.db3 --clock   OR   ros2 bag play one_bag_20251218_172642_0.db3 --clock
 Run rqt_plot: ros2 run plotjuggler plotjuggler
-
-ros2 topic hz /panda_gripper/width
-ros2 topic hz /cartesian_impedance/equilibrium_pose_offline_test
 """
 
-
 ## Set relative path to inference.yaml before running the node ##
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/one_bag_act_2026-01-07_18-28-18" # PC PERSONALE E ROSBAG
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/config_act1_2026-01-07_12-46-30" # config1 (kinematics test) works!
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/config_act3_2026-01-07_14-07-28" # baseline works 
 
 # no grasp
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_no_grasp_act_config_cubes_no_grasp/config_act3_2026-01-20_14-57-38" # works
@@ -53,12 +46,23 @@ ros2 topic hz /cartesian_impedance/equilibrium_pose_offline_test
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_no_grasp_act_config_cubes_no_grasp/config_act9_2026-01-20_21-51-46" # not works on all corners
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_no_grasp_act_config_cubes_no_grasp/config_act10_2026-01-21_01-25-05"  # not works on all corners
 
-# with grasp
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act3_2026-01-21_05-05-25" # works only 1 corner
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act5_2026-01-21_08-57-46" # barely work only 2 corners
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act8_2026-01-21_12-47-17" # barely work only 2 corners
-checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act9_2026-01-21_16-38-27" # barely work only 2 corners
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/"
+# grasp2pos_new
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_2pos_new_act_grasp_2pos_new/config_act3_2026-01-30_16-53-46"
+
+# grasp2pos_new_outliers
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_2pos_new_outliers_act_grasp_2pos_new_outliers/config_act3_2026-01-30_16-53-09"
+
+# grasp 4pos
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_act_grasp_4pos_new/config_act3_2026-02-02_19-07-52"
+
+# grasp 4pos outliers
+checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act3_2026-02-02_19-05-33"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act9_2026-02-03_20-43-03"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act3_25_perc_2026-02-05_07-53-58"
+
+# columns
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/columns_leo_act_columns_leo/config_act3_2026-02-04_16-18-44"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/columns_mathis_act_columns_mathis/config_act3_2026-02-04_16-17-02"
 
 
 
@@ -106,6 +110,7 @@ class FrankaInference(Node):
         self.fps_dataset = inference_cfg["fps_dataset"] 
         self.alpha = inference_cfg["output_filter_alpha"]
         self.smooth_output = inference_cfg["smooth_output"]
+        self.save_video = True # inference_cfg["save_video"]
 
         # Get configs about dataset, training related to the saved checkpoint
         dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(f"{checkpoint_rel_path}/dataset.yaml")
@@ -199,7 +204,7 @@ class FrankaInference(Node):
 
         # Load policy
         PolicyClass = get_policy_class(policy_name)
-        self.policy = PolicyClass.from_pretrained(f"{checkpoint_rel_path}/best_model.pt")
+        self.policy = PolicyClass.from_pretrained(f"{checkpoint_rel_path}/step_00070000.pt") # best_model.pt
         self.policy.reset() # reset the policy to prepare for rollout
 
         # Compute policy steps
@@ -214,6 +219,24 @@ class FrankaInference(Node):
                                                        self.fps_sampling_chunk)
 
         print("FrankaInference node initialized successfully")
+
+        # save video of the inference
+        save_video_path = f"{checkpoint_rel_path}/video.mp4"
+        self.camera_name = "observation.images.front_cam1"
+        self.video_writer = imageio.get_writer(save_video_path, fps=int(self.fps_sampling_chunk)) if self.save_video else None
+
+    def destroy_node(self):
+
+        print("Shutting down node, closing video...")
+
+        if hasattr(self, "video_writer") and self.video_writer is not None:
+            try:
+                self.video_writer.close()
+                print("Video writer closed successfully.")
+            except Exception as e:
+                print(f"Error closing video writer: {e}")
+
+        super().destroy_node()
 
     def webcam1_callback(self, msg):
 
@@ -633,11 +656,17 @@ class FrankaInference(Node):
         # # Profile time for inference
         # t0 = time.perf_counter()
 
+        # save video of the inference
+        if (self.save_video == True):
+            img = np.transpose(obs[self.camera_name][0, 0].cpu().numpy(), (1, 2, 0)) # (C, H, W), float32 [0,1]
+            img = (img * 255.0).clip(0, 255).astype(np.uint8)
+            self.video_writer.append_data(img)
+
         # Inference
         with torch.inference_mode():
             action = self.policy.select_action(obs) # (B, N_hist, D) --> (B, D)
             # actions = self.policy.diffusion.generate_actions(obs) # (B, N_hist, D) --> (B, N_chunk, D)
-            print("step: ", self.current_step)
+            # print("step: ", self.current_step)
             # print("policy action: ", action)
 
         # # Profile time for inference
@@ -683,7 +712,9 @@ class FrankaInference(Node):
                 part = get_absolute_pose_wrt_last_state(pos, R, self.p_base.to("cpu"), self.R_base.to("cpu")) # quaternion notation for orientation
 
             elif action_name == "gripper":
+                # print("gripper poly: ", action[-1])
                 action[-1] = CustomTransforms.gripper_action_continuous2discrete(action[-1]) # Convert gripper in binary {0,1}
+                # print("gripper post: ", action[-1])
                 part = action[-1:]
 
             # Add part to state vector
