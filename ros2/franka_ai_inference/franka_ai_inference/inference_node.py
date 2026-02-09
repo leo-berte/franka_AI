@@ -44,37 +44,12 @@ ros2 topic hz /cartesian_impedance/equilibrium_pose_offline_test
 """
 
 ## Set relative path to inference.yaml before running the node ##
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/one_bag_act_2026-01-07_18-28-18" # PC PERSONALE E ROSBAG
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/config_act1_2026-01-07_12-46-30" # config1 (kinematics test) works!
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/one_bag_act_Test_B/config_act3_2026-01-07_14-07-28" # baseline works 
 
 # no grasp
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_no_grasp_act_config_cubes_no_grasp/config_act3_2026-01-20_14-57-38" # works
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_no_grasp_act_config_cubes_no_grasp/config_act8_2026-01-20_18-25-04" # works
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_no_grasp_act_config_cubes_no_grasp/config_act9_2026-01-20_21-51-46" # not works on all corners
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_no_grasp_act_config_cubes_no_grasp/config_act10_2026-01-21_01-25-05"  # not works on all corners
-
-# with grasp
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act3_2026-01-21_05-05-25" # works only 1 corner
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act5_2026-01-21_08-57-46" # barely work only 2 corners
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act8_2026-01-21_12-47-17" # barely work only 2 corners
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act9_2026-01-21_16-38-27" # barely work only 2 corners
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/"
-
-# with grasp 100k
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act3B_2026-01-22_17-51-07"
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_act_config_cubes_with_grasp/config_act9B_2026-01-22_17-51-07"
-
-# outliers
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_with_grasp_outlier_act_config_cubes_with_grasp_outliers/config_act9B_2026-01-23_07-50-29"
-
-# with grasp 100k new (4 episode only)
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/new_cubes_grasp_small_outliers_act_config_new_cubes_grasp_small_outliers/config_act11_2026-01-27_16-36-46"
-
-# grasp2pos
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_2pos_act_grasp_2pos/config_act3_2026-01-28_14-14-15"
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_2pos_act_grasp_2pos/config_act9_2026-01-28_14-15-04"
-
 
 # grasp2pos_outliers
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_2pos_outliers_act_grasp_2pos_outliers/config_act3_2026-01-29_16-26-15"
@@ -90,8 +65,13 @@ ros2 topic hz /cartesian_impedance/equilibrium_pose_offline_test
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_act_grasp_4pos_new/config_act3_2026-02-02_19-07-52"
 
 # grasp 4pos outliers
-checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act3_2026-02-02_19-05-33"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act3_2026-02-02_19-05-33"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act9_2026-02-03_20-43-03"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act3_25_perc_2026-02-05_07-53-58"
 
+# columns leo
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/columns_leo_act_columns_leo/config_act3_2026-02-04_16-18-44"
+checkpoint_rel_path = "../workspace/outputs/checkpoints/columns_mathis_act_columns_mathis/config_act3_2026-02-04_16-17-02"
 
 
 
@@ -262,7 +242,7 @@ class FrankaInference(Node):
 
         # Load policy
         PolicyClass = get_policy_class(policy_name)
-        self.policy = PolicyClass.from_pretrained(f"{checkpoint_rel_path}/step_00090000.pt") # best_model.pt
+        self.policy = PolicyClass.from_pretrained(f"{checkpoint_rel_path}/step_00070000.pt") # best_model.pt
         self.policy.reset() # reset the policy to prepare for rollout
 
         # Compute policy steps
