@@ -133,6 +133,7 @@ def compute_episode_stats_streaming(dataloader, transforms, keep_keys, feature_g
         total = counts_elems[k]
         mean = sums[k] / total
         var = (sq_sums[k] / total) - mean ** 2
+        var = torch.clamp(var, min=0.0)
         std = torch.sqrt(var + 1e-8)
 
         if k in feature_groups["VISUAL"]:
@@ -160,7 +161,7 @@ def main():
     # Get episode indeces
     meta = LeRobotDatasetMetadata(repo_id=None, root=dataset_path)
     all_eps = list(meta.episodes.keys()) # list of episode indeces
-
+    
     # Set output folder to save new stats
     output_path = Path(f"configs/{config_folder}") / "episodes_stats_transformed.jsonl"
 

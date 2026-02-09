@@ -23,8 +23,8 @@ from franka_ai.models.factory import get_policy_config_class, make_policy, get_p
 """
 Run the code: 
 
-python src/franka_ai/training/train.py --dataset /mnt/Data/datasets/lerobot/single_outliers \
-                                       --config config_kin_act1 \
+python src/franka_ai/training/train.py --dataset /mnt/Data/datasets/lerobot/one_bag \
+                                       --config config \
                                        --policy act \
                                        --pretrained outputs/checkpoints/kinematics_tests/single_outliers_act_2025-12-25_21-08-42/best_model.pt
 
@@ -42,8 +42,8 @@ http://localhost:6006/#timeseries
 
 # TODO:
 
-# 1) Check pre-training feature (i.e. When I add Fext in input features for example)
-# 2) Optimize training (see notes
+# 1) Check pre-training feature (i.e. When I add Fext in input features for example or new image)
+
 
  
 def parse_args():
@@ -57,7 +57,7 @@ def parse_args():
                         help="Absolute path to pretrained checkpoint")
 
     parser.add_argument("--policy", type=str, required=True,
-                        choices=["diffusion", "act", "flow"],
+                        choices=["diffusion", "act", "flowLeonardo", "template"],
                         help="Policy name")
     
     parser.add_argument("--config", type=str, default="config",
@@ -69,12 +69,29 @@ def parse_args():
 def train():
 
     """
+        Train or fine-tune a policy on a LeRobot dataset using supervised learning.
 
-    INSERT CLEAN DESCRIPTION
+        This function implements the full training pipeline, including:
+        - Configuration loading for dataset, model and optimization
+        - Dataset and DataLoader construction with temporal histories
+        - Policy initialization from scratch or from a pretrained checkpoint
+        - Loading dataset statistics for feature normalization
+        - Automatic Mixed-Precision training with gradient clipping and LR scheduling
+        - Periodic evaluation, checkpointing and logging
 
-    If pretrained_path is None → train from scratch.
-    If pretrained_path is provided → fine-tune from checkpoint.
-    """
+        Training behavior:
+        - If `pretrained_path` is not provided, a new policy is initialized
+            using dataset-derived input/output feature specifications and
+            aggregated normalization statistics.
+        - If `pretrained_path` is provided, the policy is loaded and fine-tuned
+            from the given checkpoint.
+
+        Optimization details:
+        - Uses AdamW with warmup followed by cosine decay
+        - Supports automatic mixed precision (AMP) on CUDA devices
+        - Logs training and validation metrics to TensorBoard and CSV
+        - Saves periodic checkpoints and tracks the best validation model
+        """
 
     # -------------------
     # INIT FOLDERS & ARGS
@@ -92,6 +109,7 @@ def train():
     train_cfg, policies_cfg = get_configs_training(f"configs/{config_folder}/train.yaml")
     models_cfg = get_configs_models(f"configs/{config_folder}/models.yaml")
     policy_cfg = policies_cfg[policy_name]
+    model_cfg = models_cfg[policy_name]
 
     # Get folders to save weights and tensorboard logs
     checkpoints_dir, tensorboard_dir, tsbrd_writer = set_output_folders_train(policy_name, dataset_path, config_folder)
@@ -120,21 +138,24 @@ def train():
         raise ValueError("save_ckpt_freq must be >= eval_freq and a multiple of it")
     if training_steps % save_ckpt_freq != 0:
         raise ValueError("training_steps must be a multiple of save_ckpt_freq to ensure final evaluation alignment")
+    if model_cfg["sampling"]["fps_sampling_hist"] != model_cfg["sampling"]["fps_sampling_chunk"]:
+        raise ValueError("fps_sampling_hist must be the same as fps_sampling_chunk.")
 
     # Eventually freeze seed for reproducibility
     if seed_val is not None and seed_val >= 0:
         seed_everything(seed_val)
 
     # Prepare transforms for training, inference and for computing dataset stats
-    transforms_train = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=True)
-    transforms_val = CustomTransforms(dataset_cfg, transforms_cfg, models_cfg[policy_name], train=False)
+    transforms_train = CustomTransforms(dataset_cfg, transforms_cfg, model_cfg, train=True)
+    transforms_val = CustomTransforms(dataset_cfg, transforms_cfg, model_cfg, train=False)
 
     # Create loaders
     train_loader, train_ep, val_loader, val_ep = make_dataloader(
         dataset_path=dataset_path,
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
-        model_cfg=models_cfg[policy_name]
+        model_cfg=model_cfg,
+        selected_episodes=[0]
     )
 
     # ---------------------
@@ -167,7 +188,7 @@ def train():
             input_features=input_features,
             output_features=output_features,
             normalization_mapping=normalization_mapping,
-            **models_cfg[policy_name]["params"]
+            **model_cfg["params"]
         )
 
         # Get episodes stats
@@ -185,6 +206,10 @@ def train():
     # Set training mode
     policy.train() # during training layers like Dropout or BatchNorm are ON 
     policy.to(device)
+
+    # Activate Automatic Mixed Precision (AMP): forward/backward in FP16, loss/optimizer/weights in FP32
+    use_amp = (device.type == "cuda")
+    scaler = torch.amp.GradScaler(device="cuda", enabled=use_amp)
 
     # Optimizer
     optimizer = torch.optim.AdamW(policy.parameters(), lr=learning_rate, weight_decay=weight_decay)
@@ -227,18 +252,29 @@ def train():
             batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}      
             
             # Apply custom transforms
-            batch = transforms_train.transform(batch) # in/out: (B, N_h, ...)
+            batch = transforms_train.transform(batch) # out: (B, N_h, ...)
 
             # print("transform", {k:v.shape for k,v in batch.items() if isinstance(v, torch.Tensor)})
 
-            # Computes the loss (and optionally predictions)
-            loss, _ = policy.forward(batch)
-            print(loss.item())
+            # Use Automatic Mixed Precision (AMP)
+            with torch.amp.autocast(device_type="cuda", enabled=use_amp):
+                loss, _ = policy.forward(batch)
 
-            loss.backward() # compute gradients
-            total_norm = clip_grad_norm_(policy.parameters(), max_norm=1.0) # measure gradients norm and clip it
+            # Scale loss (multiply by bigger number) to avoid gradients computation (g'=dL'/dW) is zero
+            scaler.scale(loss).backward() 
+
+            # Unscale gradients before clipping (g=g'/s)
+            scaler.unscale_(optimizer)
+
+            # Prevent exploding gradients
+            total_norm = clip_grad_norm_(policy.parameters(), max_norm=1.0)
             running_grad_norm_sum += total_norm
-            optimizer.step() # do gradient step
+
+            # Update model weights + adapt scaling number
+            scaler.step(optimizer)
+            scaler.update()
+
+            # Update learning rate + reset gradients
             scheduler.step()
             optimizer.zero_grad()
 
@@ -251,7 +287,7 @@ def train():
             running_train_loss += loss.item()
 
             # Log metrics
-            if step % log_freq == 0:
+            if step > 0 and step % log_freq == 0:
 
                 # Compute metrics
                 avg_step_time = running_time_sum / log_freq
@@ -270,7 +306,7 @@ def train():
                 tsbrd_writer.add_scalar("Metrics/lr", optimizer.param_groups[0]["lr"], step) # learning rate
             
             # Log eval loss
-            if step % eval_freq == 0:
+            if step > 0 and step % eval_freq == 0:
 
                 # Run evaluation on validation set
                 policy.eval()
@@ -313,11 +349,15 @@ def train():
             if step > training_steps:
                 done = True
                 break
+    
+    # Skip steps < lr_warmup_steps for plotting losses
+    train_steps_f, train_losses_f = zip(*[(s, l) for s, l in zip(train_steps, train_losses) if s > lr_warmup_steps])
+    val_steps_f, val_losses_f = zip(*[(s, l) for s, l in zip(val_steps, val_losses) if s > lr_warmup_steps])
 
     # Plot losses
     plt.figure(figsize=(8, 5))
-    plt.plot(train_steps, train_losses, label="Train Loss")
-    plt.plot(val_steps, val_losses, label="Validation Loss")
+    plt.plot(train_steps_f, train_losses_f, label="Train Loss")
+    plt.plot(val_steps_f, val_losses_f, label="Validation Loss")
     plt.xlabel("Steps")
     plt.ylabel("Loss")
     plt.title("Training and Validation Loss")
@@ -330,9 +370,6 @@ def train():
     print(f"Saved training curve at: {plot_path}")
     plt.close()
 
-
 if __name__ == "__main__":
     
     train()
-
-

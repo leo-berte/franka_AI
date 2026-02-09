@@ -10,51 +10,39 @@ from franka_ai.utils.seed_everything import make_worker_init_fn
 
 
 
-# TODO:
-
-# 1) Togliere episodio 0 
-
-
-
 
 def make_dataloader(
     repo_id=None, 
     dataset_path=None, 
     dataloader_cfg=None,
     dataset_cfg=None,
-    model_cfg=None
+    model_cfg=None,
+    selected_episodes=None
 ):
-    
+
     """
-    
-    TO UPDATE
-    
     Build PyTorch DataLoaders for training and validation from a LeRobot dataset.
 
-    Handles:
-    - Loading dataset from Hugging Face hub or local path
-    - Building history and future frames (delta_timestamps)
-    - Splitting into training and validation sets
-    - Applying image and proprioceptive transformations
-    - Creating optimized DataLoaders for training
+    This function constructs dataset instances and DataLoaders by:
+      - Loading a LeRobot dataset from a local path or Hugging Face repository
+      - Building temporal histories and future action chunks via delta timestamps
+      - Subsampling observations and actions according to model sampling rates
+      - Splitting episodes into training and validation sets
+      - Creating optimized DataLoaders with reproducible worker behavior
 
     Args:
-        repo_id: Hugging Face repo ID
-        dataseth_path: local dataset root directory
-        visual_obs_names: names of the visual observations
-        device: CPU or GPU
-        batch_size: number of samples per batch
-        shuffle: whether to shuffle the dataset
-        train_split: training split ratio (0–1)
-        num_workers: number of parallel CPU workers
-        seed_val: base seed for reproducibility
-        N_history: number of past frames (including current)
-        N_chunk: number of future action frames
-        fps: desired dataset frame rate to build delta_timestamps (Hz)
-        print_ds_info: print dataset statistics
+        repo_id (str, optional): Path or Hugging Face repository ID of the dataset.
+        dataset_path (str, optional): Local root directory of the dataset.
+        dataloader_cfg (dict): Configuration for DataLoader behavior.
+        dataset_cfg (dict): Dataset configuration describing features and state/action layouts.
+        model_cfg (dict): Model configuration specifying temporal parameters and sampling rates.
+        selected_episodes (list[int], optional): Explicit list of episode indices to use for both training and validation.
 
     Returns:
-        (DataLoader, DataLoader): train and validation dataloaders
+        train_loader (DataLoader): DataLoader for training episodes.
+        train_episodes (list[int]): List of episode indices used for training.
+        val_loader (DataLoader): DataLoader for validation episodes.
+        val_episodes (list[int]): List of episode indices used for validation.
     """
 
     # Extract parameters
@@ -89,11 +77,21 @@ def make_dataloader(
     if train_split_ratio +  val_split_ratio > 1.0:
         raise ValueError("train_split_ratio + val_split_ratio must not be greater than 1.0.")
 
-    # Split indeces for training and validation
-    num_train_episodes = int(num_episodes * train_split_ratio)
-    num_val_episodes = int(num_episodes * val_split_ratio)
-    train_episodes = [0] # episode_ids[:num_train_episodes] ##### --> TEMP KINEMATICS ONLY TEST
-    val_episodes = [0] # episode_ids[num_train_episodes:num_train_episodes + num_val_episodes] ##### --> TEMP KINEMATICS ONLY TEST
+    # Select episodes (manually or with train/val split ratio)
+    if selected_episodes:
+        train_episodes=selected_episodes
+        val_episodes=selected_episodes
+    else:
+        num_train_episodes = int(num_episodes * train_split_ratio)
+        num_val_episodes = int(num_episodes * val_split_ratio)
+        if num_train_episodes +  num_val_episodes > num_episodes:
+            raise ValueError(f"num_train_episodes ({num_train_episodes}) + num_val_episodes ({num_val_episodes}) > num_episodes ({num_episodes}).")
+        if num_train_episodes < 1 or num_val_episodes < 1:
+            raise ValueError(f"Both num_train_episodes ({num_train_episodes}) and num_val_episodes ({num_val_episodes}) must be greater than zero.")
+        train_episodes = episode_ids[:num_train_episodes] 
+        val_episodes = episode_ids[num_train_episodes:num_train_episodes + num_val_episodes]
+        print("Training episodes indeces: ", train_episodes)
+        print("Validation episodes indeces: ", val_episodes)
 
     # Load the raw dataset (hub or local)
     train_ds = LeRobotDatasetPatch(
@@ -119,8 +117,11 @@ def make_dataloader(
     # fix seed for reproducibility
     if seed_val is not None and seed_val >= 0:
         worker_fn = make_worker_init_fn(seed_val)
+        g = torch.Generator()
+        g.manual_seed(seed_val)
     else:
         worker_fn = None   
+        g = torch.Generator()
 
     # Wrap in DataLoaders
 
@@ -131,24 +132,22 @@ def make_dataloader(
         num_workers=num_workers, # number of CPU processes that load data in parallel
         pin_memory=device.type!="cpu", # allocate CPU memory as pinned for faster CPU to GPU transfers
         prefetch_factor=prefetch_factor, # each worker preloads 2 batches ahead
-        persistent_workers=True, # keep workers alive between epochs 
+        persistent_workers=False, # keep workers alive between epochs 
         worker_init_fn=worker_fn, # ensures each worker has a reproducible deterministic seed
+        generator=g, # ensures shuffle=True has a reproducible deterministic seed
         drop_last=True # if the total number of samples is not divisible by batch_size, the last incomplete batch is dropped
     )
 
     val_loader = DataLoader(
         val_ds,
         batch_size=batch_size,
-        shuffle=shuffle,
+        shuffle=False,
         num_workers=num_workers,
         pin_memory=device.type!="cpu",
         prefetch_factor=prefetch_factor,
-        persistent_workers=True,
+        persistent_workers=False,
         worker_init_fn=worker_fn,
-        drop_last=True            
+        drop_last=True
     )
 
     return train_loader, train_episodes, val_loader, val_episodes
-
-
-
