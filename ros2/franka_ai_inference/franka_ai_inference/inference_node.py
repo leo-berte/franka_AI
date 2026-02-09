@@ -56,13 +56,13 @@ Run rqt_plot: ros2 run plotjuggler plotjuggler
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_act_grasp_4pos_new/config_act3_2026-02-02_19-07-52"
 
 # grasp 4pos outliers
-# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act3_2026-02-02_19-05-33"
+checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act3_2026-02-02_19-05-33"
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act9_2026-02-03_20-43-03"
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act3_25_perc_2026-02-05_07-53-58"
 
 # columns
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/columns_leo_act_columns_leo/config_act3_2026-02-04_16-18-44"
-checkpoint_rel_path = "../workspace/outputs/checkpoints/columns_mathis_act_columns_mathis/config_act3_2026-02-04_16-17-02"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/columns_mathis_act_columns_mathis/config_act3_2026-02-04_16-17-02"
 
 
 
@@ -110,7 +110,7 @@ class FrankaInference(Node):
         self.fps_dataset = inference_cfg["fps_dataset"] 
         self.alpha = inference_cfg["output_filter_alpha"]
         self.smooth_output = inference_cfg["smooth_output"]
-        self.save_video = inference_cfg["save_video"]
+        self.save_video = True # inference_cfg["save_video"]
 
         # Get configs about dataset, training related to the saved checkpoint
         dataloader_cfg, dataset_cfg, transforms_cfg = get_configs_dataset(f"{checkpoint_rel_path}/dataset.yaml")
@@ -658,7 +658,9 @@ class FrankaInference(Node):
 
         # save video of the inference
         if (self.save_video == True):
-            self.video_writer.append_data(np.transpose(obs[self.camera_name][0,0].cpu().numpy(), (1, 2, 0)))
+            img = np.transpose(obs[self.camera_name][0, 0].cpu().numpy(), (1, 2, 0)) # (C, H, W), float32 [0,1]
+            img = (img * 255.0).clip(0, 255).astype(np.uint8)
+            self.video_writer.append_data(img)
 
         # Inference
         with torch.inference_mode():
