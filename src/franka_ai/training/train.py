@@ -155,7 +155,7 @@ def train():
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         model_cfg=model_cfg,
-        # selected_episodes=[0]
+        selected_episodes=[0]
     )
 
     # ---------------------
@@ -252,7 +252,7 @@ def train():
             batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}      
             
             # Apply custom transforms
-            batch = transforms_train.transform(batch) # in/out: (B, N_h, ...)
+            batch = transforms_train.transform(batch) # out: (B, N_h, ...)
 
             # print("transform", {k:v.shape for k,v in batch.items() if isinstance(v, torch.Tensor)})
 

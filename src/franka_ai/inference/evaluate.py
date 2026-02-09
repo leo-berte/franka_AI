@@ -19,8 +19,8 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                           --checkpoint outputs/checkpoints/one_bag_diffusion_config_test_2026-01-19_16-56-51 \
-                                           --policy act
+                                           --checkpoint outputs/checkpoints/one_bag_flowLeonardo_config_test_2026-02-09_10-01-05 \
+                                           --policy flowLeonardo
 
 python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
                                            --checkpoint /workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-24_21-15-57 \
@@ -44,7 +44,7 @@ def parse_args():
         help="Absolute path to the checkpoint folder")
     
     parser.add_argument("--policy", type=str, default="diffusion",
-                    choices=["diffusion", "act", "flow"],
+                    choices=["diffusion", "act", "flowLeonardo"],
                     help="Policy name")
     
     args = parser.parse_args()

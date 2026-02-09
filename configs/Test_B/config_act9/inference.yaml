@@ -1,7 +1,0 @@
-inference:
-  offline_test: True
-  smooth_output: False
-  output_filter_alpha: 0.05
-  policy_name: act
-  fps_dataset: 30.0
-

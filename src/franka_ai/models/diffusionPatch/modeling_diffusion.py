@@ -83,11 +83,26 @@ class DiffusionPolicy(PreTrainedPolicy):
         self._queues = None
 
         self.diffusion = DiffusionModel(config)
+        self.count_parameters()
 
         self.reset()
 
     def get_optim_params(self) -> dict:
         return self.diffusion.parameters()
+    
+    # PATCH
+    def count_parameters(self):
+        
+        """Print number of trainable parameters in the policy."""
+
+        # Count total number of trainable parameters
+        params = sum(p.numel() for p in self.diffusion.parameters() if p.requires_grad)
+        print(f"Total number of trainable parameters: {params:,}")
+    
+        # Count number of trainable parameters in each sub-module
+        for name, module in self.diffusion.named_children():
+            sub_params = sum(p.numel() for p in module.parameters() if p.requires_grad)
+            print(f"  - {name}: {sub_params:,}")
 
     def reset(self):
         """Clear observation and action queues. Should be called on `env.reset()`"""
