@@ -6,6 +6,7 @@ import time
 import torch
 import csv
 import os
+import wandb
 
 from lerobot.configs.types import FeatureType
 from lerobot.common.datasets.compute_stats import aggregate_stats
@@ -66,6 +67,27 @@ def parse_args():
     return parser.parse_args()
 
 
+class CustomWriter():
+    def __init__(self, args, train_cfg):
+        if train_cfg["wandb"]["key"] is None:
+            print("You need a key if you want to use wandb")
+            
+        wandb.login(key=train_cfg["wandb"]["key"])
+
+        arg_dict = vars(args)
+        self.writer = wandb.init(
+                # Set the wandb project where this run will be logged.
+                project=train_cfg["wandb"]["project"],
+                # Track hyperparameters and run metadata.
+                config={str(key): value for key, value in arg_dict.items()},
+            )
+
+    def append_stats(self, **values):
+        self.writer.log(values)
+
+    def finish(self):
+        self.writer.finish()
+
 def train():
 
     """
@@ -112,7 +134,10 @@ def train():
     model_cfg = models_cfg[policy_name]
 
     # Get folders to save weights and tensorboard logs
-    checkpoints_dir, tensorboard_dir, tsbrd_writer = set_output_folders_train(policy_name, dataset_path, config_folder)
+    use_tsbrd = train_cfg["tensorboard"]["use"]
+    use_wandb = train_cfg["wandb"]["use"]
+    checkpoints_dir, tsbrd_writer = set_output_folders_train(policy_name, dataset_path, config_folder, use_tensorboard=use_tsbrd)
+    wandb_writer = CustomWriter(args, train_cfg)
 
     # create CSV file to store training losses
     csv_path = os.path.join(checkpoints_dir, "loss_log.csv")
@@ -300,10 +325,15 @@ def train():
                 running_train_loss = 0.0
 
                 # Log to TensorBoard
-                tsbrd_writer.add_scalar("Loss/train", avg_train_loss, step)
-                tsbrd_writer.add_scalar("Metrics/grad_norm", avg_grad_norm, step) # gradients magnitude
-                tsbrd_writer.add_scalar("Metrics/step_time_sec", avg_step_time, step) # latency for processing 1 batch (dataloader, forward + backward pass, optimizer update)
-                tsbrd_writer.add_scalar("Metrics/lr", optimizer.param_groups[0]["lr"], step) # learning rate
+                if use_tsbrd:
+                    tsbrd_writer.add_scalar("Loss/train", avg_train_loss, step)
+                    tsbrd_writer.add_scalar("Metrics/grad_norm", avg_grad_norm, step) # gradients magnitude
+                    tsbrd_writer.add_scalar("Metrics/step_time_sec", avg_step_time, step) # latency for processing 1 batch (dataloader, forward + backward pass, optimizer update)
+                    tsbrd_writer.add_scalar("Metrics/lr", optimizer.param_groups[0]["lr"], step) # learning rate
+
+                # Log to WandB
+                if use_wandb:
+                    wandb_writer.append_stats(train_loss=avg_train_loss, metrics_grad_norm=avg_grad_norm, step_time_sec=avg_step_time, lr=optimizer.param_groups[0]["lr"], step=step)
             
             # Log eval loss
             if step > 0 and step % eval_freq == 0:
@@ -326,7 +356,12 @@ def train():
                 policy.train()
 
                 # Log to TensorBoard
-                tsbrd_writer.add_scalar("Loss/val", avg_val_loss, step)
+                if use_tsbrd:
+                    tsbrd_writer.add_scalar("Loss/val", avg_val_loss, step)
+
+                # Log to WandB
+                if use_wandb:
+                    wandb_writer.append_stats(val_loss=avg_val_loss, step=step)
 
                 # append to CSV
                 with open(csv_path, mode="a", newline="") as f:
@@ -369,6 +404,9 @@ def train():
     plt.savefig(plot_path, dpi=200)
     print(f"Saved training curve at: {plot_path}")
     plt.close()
+
+    if use_wandb:
+        wandb_writer.finish()
 
 if __name__ == "__main__":
     

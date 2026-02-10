@@ -26,7 +26,7 @@ def get_configs_training(config_rel_path):
 
     return train_cfg, policies_cfg
     
-def set_output_folders_train(policy_type, dataset_path, config_folder):
+def set_output_folders_train(policy_type, dataset_path, config_folder, use_tensorboard=True):
 
     """Create timestamped output folder structure for training run."""
     
@@ -40,15 +40,17 @@ def set_output_folders_train(policy_type, dataset_path, config_folder):
     dataset_name = dataset_path.split('/')[-1]
     run_name = f"{dataset_name}_{policy_type}_{config_folder}_{timestamp}"
 
-    # Subfolders
+    # Subfolders and writers
     checkpoints_dir = os.path.join(base_output_dir, "checkpoints", run_name)
-    tensorboard_dir = os.path.join(base_output_dir, "tensorboard", run_name)
-
     os.makedirs(checkpoints_dir, exist_ok=True)
-    os.makedirs(tensorboard_dir, exist_ok=True)
 
-    # TensorBoard writer
-    writer = SummaryWriter(log_dir=tensorboard_dir)
+    writer = None
+    if use_tensorboard:
+        tensorboard_dir = os.path.join(base_output_dir, "tensorboard", run_name)
+        os.makedirs(tensorboard_dir, exist_ok=True)
+
+        # TensorBoard writer
+        writer = SummaryWriter(log_dir=tensorboard_dir)
 
     # Inject policy name and dataset fps into inference.yaml and save it in 'checkpoints_dir'
 
@@ -67,7 +69,7 @@ def set_output_folders_train(policy_type, dataset_path, config_folder):
     copyfile(f"configs/{config_folder}/train.yaml", os.path.join(checkpoints_dir, "train.yaml"))
     copyfile(f"configs/{config_folder}/models.yaml", os.path.join(checkpoints_dir, "models.yaml"))
 
-    return checkpoints_dir, tensorboard_dir, writer
+    return checkpoints_dir, writer
 
 def load_dataset_fps(dataset_path):
 
