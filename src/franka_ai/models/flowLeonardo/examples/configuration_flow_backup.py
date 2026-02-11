@@ -25,9 +25,10 @@ class FlowConfig(PreTrainedConfig):
     )
 
     # Vision architecture params
-    vision_backbone_name : str | None = "vit_base_patch16_224.mae" # "resnet18d.ra2_in1k" "vit_base_patch16_224.mae" "vit_base_patch14_dinov2.lvd142m" "vit_base_patch14_reg4_dinov2.lvd142m" 
-    freeze_vision_backbone: bool = True
-
+    vision_backbone: str = "resnet18"
+    pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1"
+    replace_final_stride_with_dilation: int = False
+    
     # Transformer architecture params
     dim_model: int = 512
     dim_feedforward_enc: int = 3200
@@ -35,7 +36,7 @@ class FlowConfig(PreTrainedConfig):
     num_layers_enc: int = 4
     
     # FM type
-    head_type: str = "flow_matching_transformer" # "mlp" "flow_matching_mlp" "flow_matching_unet" "flow_matching_transformer"
+    head_type: str = "flow_matching_mlp" # "mlp" "flow_matching_mlp" "flow_matching_unet" "flow_matching_transformer"
 
     # Common
     use_film: bool = True

@@ -19,12 +19,12 @@ from franka_ai.models.factory import get_policy_class
 Run the code: 
 
 python src/franka_ai/inference/evaluate.py --dataset /mnt/Data/datasets/lerobot/one_bag \
-                                           --checkpoint outputs/checkpoints/one_bag_flowLeonardo_config_test_2026-02-10_10-10-40 \
+                                           --checkpoint outputs/checkpoints/one_bag_flowLeonardo_config_test_2026-02-11_15-50-48 \
                                            --policy flowLeonardo
 
-python src/franka_ai/inference/evaluate.py --dataset /workspace/data/single_outliers \
-                                           --checkpoint /workspace/outputs/checkpoints/single_outliers_diffusion_2025-12-24_21-15-57 \
-                                           --policy diffusion
+python src/franka_ai/inference/evaluate.py --dataset /workspace/data/one_bag \
+                                           --checkpoint /workspace/outputs/checkpoints/one_bag_flowLeonardo_config_test_2026-02-11_15-50-48 \
+                                           --policy flowLeonardo
 """
 
 

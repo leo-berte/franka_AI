@@ -212,7 +212,7 @@ def train():
     scaler = torch.amp.GradScaler(device="cuda", enabled=use_amp)
 
     # Optimizer
-    optimizer = torch.optim.AdamW(policy.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    optimizer = torch.optim.AdamW(policy.get_optim_params(), lr=learning_rate, weight_decay=weight_decay)
 
     # Linear LR scheduler for warmup (from start_factor*lr to lr)
     warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=lr_warmup_steps)
