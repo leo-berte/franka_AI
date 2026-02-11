@@ -19,6 +19,8 @@ from lerobot.common.policies.pretrained import PreTrainedPolicy
 
 # Use ADALN in EACH decoder layer instead of unique global FiLM
 # capire se vision backbone ha già nel risultato spatial pos embeddings + change backbone
+# get high level idea about difference MLP and diffusion/flow starting from noise (stable diffusion paper??)
+
 
 
 # =============================================================================
@@ -526,6 +528,12 @@ class VisionProjector(nn.Module):
     Opzione 2 (Pooling): Fai un Global Average Pooling sulle mappe 7x7 prima di darle al Transformer.
 
     # Use CLIP-pretrained ViT-B/32 encoder [29]. Images are resized to 224×224 pixels --> See force UMI gripper for augmentations params values also
+
+    Check also GR1, MAE --> timm: vit_base_patch16_224.mae
+
+    capire se backbone resnet o mae o dino o perceiver han bisogno di positional embeddings
+
+    devo frizarli per training o no? numero parametri che hanno?
     """
 
     def __init__(self, 
@@ -647,7 +655,7 @@ class TransformerEncoder(nn.Module):
 
             for cam_features in all_cam_features: # loop over each camera
 
-                # print("cam_features: ", cam_features.shape)
+                print("cam_features: ", cam_features.shape)
 
                 # add spatial 2D positional encoding to images
                 enc2D = self.pos_enc2D.compute(B, dim_model, H_prime, W_prime, device=device)
@@ -666,7 +674,7 @@ class TransformerEncoder(nn.Module):
 
             img_features = torch.cat(processed_all_cam_features, dim=1) # [B, N_cam*N_HIST*H'*W', dim_model]
 
-            # print("img_features: ", img_features.shape)
+            print("img_features: ", img_features.shape)
 
             inputs_list.append(img_features)
 
@@ -681,7 +689,11 @@ class TransformerEncoder(nn.Module):
         # compose all the tokens as input for transformer
         x = torch.cat(inputs_list, dim=1) # [B, seq_length=1+n_hist+N_cam*N_HIST*H'*W', dim_model]
 
+        print("x: ", x.shape)
+
         # --> x:  torch.Size([B, 22, 512]) con img [120, 160] e N_h = 1 e cam=1
+        # --> x:  torch.Size([B, xxx, 512]) con img [210, 280] e N_h = 1 e cam=1
+        # --> x:  torch.Size([B, xxx, 512]) con img [210, 280] e N_h = 3 e cam=2
         # --> x:  torch.Size([B, 130, 512]) con img [300, 500] e N_h = 1 e cam=1
 
         # pass through transformer
