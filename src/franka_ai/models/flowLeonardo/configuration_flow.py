@@ -28,6 +28,17 @@ class FlowConfig(PreTrainedConfig):
     vision_backbone_name : str | None = "vit_base_patch16_224.mae" # "resnet18d.ra2_in1k" "vit_base_patch16_224.mae" "vit_base_patch14_dinov2.lvd142m" "vit_base_patch14_reg4_dinov2.lvd142m" 
     freeze_vision_backbone: bool = True
 
+    # Resampler hparams
+    use_perceiver_resampler: bool = True
+    resampler_params: dict = field(
+        default_factory=lambda: {
+            "depth": 4,
+            "dim_head": 64,
+            "heads": 8,
+            "num_latents": 64,
+        }
+    )
+
     # Transformer architecture params
     dim_model: int = 512
     dim_feedforward_enc: int = 3200

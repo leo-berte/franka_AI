@@ -5,7 +5,10 @@ from collections import deque
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
+from einops import rearrange
+
 import timm
+from flamingo_pytorch import PerceiverResampler
 
 from franka_ai.models.flowLeonardo.configuration_flow import FlowConfig
 
@@ -16,9 +19,11 @@ from lerobot.common.policies.pretrained import PreTrainedPolicy
 # TODO:
 
 # Use ADALN in EACH decoder layer instead of unique global FiLM
-# perceiver resampler
 # In encoder, I use 1D pos_embedding for spatial info for vision, but I shall use 2D pos_embedding
 # --> token 3 and 4 similar, but if it is grid 3x3 those indeces are farther in 2D world
+
+# capire il learned pos embedding che usano, e perche loro adatabile e mio no
+# testa inferenza lab
 
 
 # =============================================================================
@@ -216,7 +221,11 @@ class Flow(nn.Module):
         if self.config.image_features:
             self.vision_projector = VisionProjector(vision_backbone_name=self.config.vision_backbone_name,
                                                     freeze_backbone=self.config.freeze_vision_backbone,
-                                                    output_dim=self.config.dim_model)
+                                                    output_dim=self.config.dim_model,
+                                                    use_perceiver_resampler=self.config.use_perceiver_resampler,
+                                                    resampler_params=self.config.resampler_params,
+                                                    N_history=self.config.N_history,
+                                                    backbone_pretrained=True)
 
         self.encoder = TransformerEncoder(dim_model=self.config.dim_model, 
                                           dim_feedforward=self.config.dim_feedforward_enc,
@@ -291,14 +300,7 @@ class Flow(nn.Module):
             # Create a list of cameras
             for images in batch_images: # [B, N_HIST, C, H, W]
 
-                B, N_HIST, C, H, W = images.shape
-                images = images.view(B * N_HIST, C, H, W)
-
-                cam_features = self.vision_projector(images) # [B*N_HIST, seq_len, dim_model]
-
-                BN_HIST, seq_len, dim_model = cam_features.shape
-                cam_features = cam_features.view(B, N_HIST, seq_len, dim_model) # [B, N_HIST, seq_len, dim_model]
-
+                cam_features = self.vision_projector(images) # [B, N_HIST, seq_len, dim_model]
                 all_cam_features.append(cam_features) # each element: [B, N_HIST, seq_len, dim_model]
 
         # transformer embedding
@@ -335,10 +337,9 @@ class Flow(nn.Module):
         # get device type
         device = batch["action"].device
 
-        # sample random noise for source distribution (uniform or gaussian)
+        # sample random noise for source distribution (gaussian)
         B, N_chunk, act_dim = batch["action"].shape
-        # action_chunk_src = torch.rand(B, N_chunk, act_dim, device=device) # uniform
-        action_chunk_src = torch.randn(B, N_chunk, act_dim, device=device) # gaussian
+        action_chunk_src = torch.randn(B, N_chunk, act_dim, device=device)
 
         # target flow (ground truth vector field)
         v_target = batch["action"] - action_chunk_src # [B, N_chunk, act_dim] 
@@ -440,9 +441,8 @@ class Flow(nn.Module):
         seed = 42 if self.config.use_fixed_src_dist else None
         gen = torch.Generator(device=device).manual_seed(seed) if seed else None
 
-        # start from noise (gaussian or uniform)
-        # x = torch.rand(B, N_chunk, act_dim, device=device, generator=gen) # uniform
-        x = torch.randn(B, N_chunk, act_dim, device=device, generator=gen) # gaussian
+        # start from noise (gaussian)
+        x = torch.randn(B, N_chunk, act_dim, device=device, generator=gen)
 
         # get global conditioning
         glob_cond = self.global_conditioning(batch)
@@ -516,34 +516,38 @@ class ObsProjector(nn.Module):
 
 class VisionProjector(nn.Module):
 
-    """Image feature extractor and projection layer for visual observations."""
-    
     """
-    Nella tua TransformerEncoder, tu concateni tutto: [CLS, obs, cam1_hist, cam2_hist].
-    Se hai N_HIST = 5, 2 camere e mappe 7x7, la tua sequenza è:
-    $1 + 5 + (2 \times 5 \times 49) = 496$ token.
+    Image feature extractor and projection layer for visual observations.
 
-    Invece di mandare TUTTI i patch al Transformer, dovresti comprimerli PRIMA.
-    Opzione 1 (LeRobot style): Usa lo Spatial Softmax dopo la VisionProjector. 
-    Invece di 49 patch per immagine, avresti solo 32-64 numeri (coordinate keypoints). 
-    La sequenza passerebbe da 496 token a circa 15-20 token. Questo eliminerebbe il jitter istantaneamente.
-    Opzione 2 (Pooling): Fai un Global Average Pooling sulle mappe 7x7 prima di darle al Transformer.
-
-    numero parametri che hanno?
+    This module processes raw images through a vision backbone (CNN or ViT), 
+    projects the features to the transformer's latent dimension, and optionally 
+    compresses the spatial token sequence using a Perceiver Resampler.
+    
+    Args:
+        vision_backbone_name: Name of the timm model.
+        freeze_backbone: If True, disables gradient computation for the backbone.
+        output_dim: The target dimension for the transformer encoder.
+        use_perceiver_resampler: Whether to use a Perceiver Resampler to compress tokens.
+        resampler_params: Config for the resampler (depth, heads, num_latents, etc.).
+        N_history: Number of temporal frames (used for internal temporal embeddings).
+        backbone_pretrained: Whether to load pretrained weights.
     """
 
     def __init__(self, 
                  vision_backbone_name, 
                  freeze_backbone,
-                 output_dim=512,
-                 pretrained=True):
+                 output_dim,
+                 use_perceiver_resampler,
+                 resampler_params,
+                 N_history,
+                 backbone_pretrained=True):
 
         super().__init__()
         
         # load model from pretrained weights
         self.backbone = timm.create_model(
             vision_backbone_name, 
-            pretrained=pretrained, 
+            pretrained=backbone_pretrained, 
             num_classes=0, # to avoid classification head
             global_pool='', # to maintain token dimensions
             dynamic_img_size=True if "vit" in vision_backbone_name else None
@@ -552,6 +556,8 @@ class VisionProjector(nn.Module):
         # params
         self.feature_dim = self.backbone.num_features # get output dim
         self.freeze_backbone = freeze_backbone
+        self.use_perceiver_resampler = use_perceiver_resampler
+        self.N_history = N_history
 
         # freeze backbone parameters
         if (freeze_backbone == True):
@@ -560,12 +566,25 @@ class VisionProjector(nn.Module):
 
         # project to 'output_dim'
         if ("resnet" in vision_backbone_name):
-            self.img_projector2D = nn.Conv2d(self.feature_dim, output_dim, kernel_size=1) # 1x1 conv2D
+            self.img_projector = nn.Conv2d(self.feature_dim, output_dim, kernel_size=1) # 1x1 conv2D
         elif ("vit" in vision_backbone_name):
-            self.img_projector1D = nn.Conv1d(self.feature_dim, output_dim, kernel_size=1) # 1x1 conv1D
+            self.img_projector = nn.Linear(self.feature_dim, output_dim)
             self.n_prefix = self.backbone.num_prefix_tokens # number of CLS token (ViT)
         else:
             raise ValueError(f"Vision backbone name is wrong.")
+        
+        # Perceiver resampler
+        if (use_perceiver_resampler == True):
+
+            self.pos_enc1D_spatial = PosEmbedding1D(output_dim)
+
+            self.perceiver_resampler = PerceiverResampler(
+                dim=output_dim,
+                depth=resampler_params['depth'],
+                dim_head=resampler_params['dim_head'],
+                heads=resampler_params['heads'],
+                num_latents=resampler_params['num_latents'],
+                num_media_embeds=N_history)
 
     def train(self, mode=True):
             
@@ -589,13 +608,15 @@ class VisionProjector(nn.Module):
     def forward(self, obs):
 
         """
-        Extracts and projects spatial features from a batch of images.
+        Extracts, projects and (eventually) compresses visual features.
 
         Args:
-            obs (Tensor): Batch of images with shape (B * N_HISTORY, C, H, W).
+            obs (Tensor): Batch of images with shape (B, N_HISTORY, C, H, W).
         Returns:
-            Tensor: Spatial feature map of shape (B * N_HISTORY, seq_len, output_dim).
+            Tensor: Spatial feature map of shape (B, N_HISTORY, seq_len, output_dim).
         """
+
+        obs = rearrange(obs, 'b n c h w -> (b n) c h w')
 
         # feature extraction
         if (self.freeze_backbone == True):
@@ -607,13 +628,32 @@ class VisionProjector(nn.Module):
         # project to transformer expected input dimension
 
         if (x.dim() == 4): # resnet
-            x = self.img_projector2D(x) # [B*N, output_dim, H', W']
-            x = x.flatten(2).permute(0, 2, 1) # [B*N, H'*W', output_dim]
+            x = self.img_projector(x) # [B*N, output_dim, H', W']
+            x = rearrange(x, 'bn d h w -> bn (h w) d') # [B*N, H'*W', output_dim]
         elif (x.dim() == 3): # ViT
             x = x[:, self.n_prefix:, :] # remove special tokens --> [B*N, seq_len, output_dim]
-            x = x.permute(0, 2, 1).contiguous() # since I did slicing, use "contiguous"
-            x = self.img_projector1D(x) # [B*N, seq_len, output_dim]
-            x = x.permute(0, 2, 1)
+            x = self.img_projector(x) # [B*N, seq_len, output_dim]
+
+        if (self.use_perceiver_resampler == True):
+
+            B, seq_len, output_dim = x.shape
+            device = x.device
+
+            # add spatial position embedding to tokens
+            spatial_indices = torch.arange(seq_len, dtype=torch.float32, device=device)
+            spatial_enc = self.pos_enc1D_spatial.compute(spatial_indices) # [seq_len, output_dim]
+
+            # add positional encoding to take into account spatial vision info (expand to match: [B*N, seq_len, dim_model])
+            x = x + spatial_enc.view(1, seq_len, output_dim)
+            
+            # reduce number of tokens via perceiver resampler
+            # print("x pre: ", x.shape)
+            x = rearrange(x, '(b n) s d -> b n s d', n = self.N_history)
+            x = self.perceiver_resampler(x) # [B, N, seq_len, output_dim]
+            # print("x post: ", x.shape)
+            return x
+        
+        x = rearrange(x, '(b n) s d -> b n s d', n = self.N_history) # [B, N, seq_len, output_dim]
 
         return x 
         
@@ -701,7 +741,7 @@ class TransformerEncoder(nn.Module):
 
             for cam_features in all_cam_features: # loop over each camera
 
-                print("cam_features: ", cam_features.shape)
+                # print("cam_features: ", cam_features.shape)
 
                 # add positional encoding to take into account history (expand to match: [B, N_HIST, seq_len, dim_model])
                 cam_features = cam_features + time_enc.view(1, n_hist, 1, dim_model)
@@ -710,13 +750,13 @@ class TransformerEncoder(nn.Module):
                 cam_features = cam_features + spatial_enc.view(1, 1, seq_len, dim_model)
 
                 # final representation of the tensor
-                cam_features = cam_features.reshape(B, n_hist * seq_len, dim_model)  # [B, N_HIST*seq_len, dim_model]
+                cam_features = rearrange(cam_features, 'b n s d -> b (n s) d') # [B, N_HIST*seq_len, dim_model]
 
                 processed_all_cam_features.append(cam_features)
 
             img_features = torch.cat(processed_all_cam_features, dim=1) # [B, N_cam*N_HIST*seq_len, dim_model]
 
-            print("img_features: ", img_features.shape)
+            # print("img_features: ", img_features.shape)
 
             inputs_list.append(img_features)
 
@@ -728,7 +768,7 @@ class TransformerEncoder(nn.Module):
         # compose all the tokens as input for transformer
         x = torch.cat(inputs_list, dim=1) # [B, extended_seq_len=1+n_hist+N_cam*N_HIST*seq_len, dim_model]
 
-        print("x: ", x.shape)
+        # print("x: ", x.shape)
 
         # pass through transformer
         x = self.transformer_encoder(x) # [B, extended_seq_len, dim_model]

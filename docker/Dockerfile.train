@@ -35,7 +35,7 @@ RUN pip install "pymunk<6.3.0"
 RUN pip install rerun-sdk==0.14
 RUN pip install scipy kornia matplotlib tensorboard
 RUN pip install --upgrade draccus==0.10.0
-RUN pip install timm
+RUN pip install timm flamingo-pytorch
 
 # Install package in editable mode
 RUN pip install -e .

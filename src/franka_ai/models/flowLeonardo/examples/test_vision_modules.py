@@ -1,7 +1,7 @@
 import torch
-import timm
 from torch import nn
 
+import timm
 from flamingo_pytorch import PerceiverResampler
 
 
@@ -32,7 +32,8 @@ class VisionProjector(nn.Module):
                  vision_backbone_name, 
                  freeze_backbone=True,
                  output_dim=512,
-                 pretrained=True):
+                 pretrained=True,
+                 use_perceiver_resampler=False):
 
         super().__init__()
         
@@ -70,21 +71,20 @@ class VisionProjector(nn.Module):
 
         # Resampler hparams
         resampler_params = dict()
-        resampler_params['patch_feat_dim'] = ...
-        resampler_params['depth'] = ...
-        resampler_params['dim_head'] = ...
-        resampler_params['heads'] = ...
-        resampler_params['num_latents'] = ...
-        resampler_params['num_media_embeds'] = ...
+        resampler_params['patch_feat_dim'] = 512
+        resampler_params['depth'] = 4
+        resampler_params['dim_head'] = 64
+        resampler_params['heads'] = 8
+        resampler_params['num_latents'] = 64
+        resampler_params['num_media_embeds'] = 2
 
         # Perciever resampler
-        self.n_patch_latents = resampler_params['num_latents']
         self.perceiver_resampler = PerceiverResampler(
             dim=resampler_params['patch_feat_dim'],
             depth=resampler_params['depth'],
             dim_head=resampler_params['dim_head'],
             heads=resampler_params['heads'],
-            num_latents=self.n_patch_latents,
+            num_latents=resampler_params['num_latents'],
             num_media_embeds=resampler_params['num_media_embeds'])
 
 
@@ -136,9 +136,10 @@ class VisionProjector(nn.Module):
             x = self.img_projector1D(x) # [B*N, seq_len, output_dim]
             x = x.permute(0, 2, 1)
         
-        print("x pre: ", x)
+        print("x pre: ", x.shape)
+        x = x.reshape(8,2,x.shape[-2], x.shape[-1])
         x = self.perceiver_resampler(x)
-        print("x post: ", x)
+        print("x post: ", x.shape)
 
         return x 
     
@@ -148,17 +149,17 @@ class VisionProjector(nn.Module):
 
 vision_backbone_name = "vit_base_patch16_224.mae" # "resnet18d.ra2_in1k" "vit_base_patch16_224.mae" "vit_base_patch14_dinov2.lvd142m" "vit_base_patch14_reg4_dinov2.lvd142m" 
 
-vision_projector = VisionProjector(vision_backbone_name=vision_backbone_name) 
+vision_projector = VisionProjector(vision_backbone_name=vision_backbone_name,
+                                   use_perceiver_resampler=True) 
 
 # Input image
-example_input = torch.randn(9, 3, 208, 272) # mae
-# example_input = torch.randn(9, 3, 210, 280) # dino - resnet
+example_input = torch.randn(16, 3, 208, 272) # mae
+# example_input = torch.randn(16, 3, 210, 280) # dino - resnet
 
 print("Ready for inference...")
 
 # Forward pass
-with torch.no_grad():
-    output = vision_projector(example_input)
+output = vision_projector(example_input)
 
 print(f"Nome modello: {vision_backbone_name}")
 print(f"Shape dell'input:  {example_input.shape}")  # [B, C, H, W]
