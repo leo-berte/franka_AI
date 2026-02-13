@@ -62,13 +62,13 @@ dataset:
 transforms:
 
   visual:
-    img_resize: [210, 280] 
+    img_resize: [208, 272]
     normalize: false
     augmentations:
       color_jitter:
-        brightness: 0.2
-        contrast: 0.2
-        saturation: 0.2
+        brightness: 0.25
+        contrast: 0.25
+        saturation: 0.25
         hue: 0.02
         p: 0.5
       gaussian_blur:

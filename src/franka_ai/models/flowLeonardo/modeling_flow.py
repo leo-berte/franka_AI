@@ -19,11 +19,8 @@ from lerobot.common.policies.pretrained import PreTrainedPolicy
 # TODO:
 
 # Use ADALN in EACH decoder layer instead of unique global FiLM
-# In encoder, I use 1D pos_embedding for spatial info for vision, but I shall use 2D pos_embedding
-# --> token 3 and 4 similar, but if it is grid 3x3 those indeces are farther in 2D world
+# training con ACT e evlauate on episode 10 per vedere quando generalizza lui
 
-# capire il learned pos embedding che usano, e perche loro adatabile e mio no
-# testa inferenza lab
 
 
 # =============================================================================
@@ -522,6 +519,8 @@ class VisionProjector(nn.Module):
     This module processes raw images through a vision backbone (CNN or ViT), 
     projects the features to the transformer's latent dimension, and optionally 
     compresses the spatial token sequence using a Perceiver Resampler.
+
+    Sources: https://github.com/lucidrains/flamingo-pytorch
     
     Args:
         vision_backbone_name: Name of the timm model.
@@ -773,7 +772,7 @@ class TransformerEncoder(nn.Module):
         # pass through transformer
         x = self.transformer_encoder(x) # [B, extended_seq_len, dim_model]
 
-        # layer normalization for stability
+        # final layer normalization for stability (since I used pre-norm)
         out = self.final_norm(x)
         
         return out # [B, extended_seq_len, dim_model]
@@ -1266,6 +1265,9 @@ class FlowHeadTransformerDecoder(nn.Module):
             nn.Linear(dim_model, dim_model)
         )
 
+        # used to add sinusoidal embedding to memory 'e'
+        self.pos_enc1D_memory = PosEmbedding1D(dim_model) 
+
         # used to add sinusoidal embedding to time
         self.pos_enc1D_time = PosEmbedding1D(timestep_embed_dim) 
 
@@ -1283,8 +1285,10 @@ class FlowHeadTransformerDecoder(nn.Module):
         )
 
         # decoder
-        decoder_layer = nn.TransformerDecoderLayer(d_model=dim_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=0.1, batch_first=True)
+        decoder_layer = nn.TransformerDecoderLayer(d_model=dim_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=0.1, batch_first=True, norm_first=True)
         self.transformer_decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
+
+        self.final_norm = nn.LayerNorm(dim_model)
 
         self.mlp_final = nn.Sequential(    
             nn.Linear(dim_model, action_dim)
@@ -1312,7 +1316,12 @@ class FlowHeadTransformerDecoder(nn.Module):
         chunk_indices = torch.arange(N_chunk, dtype=torch.float32, device=device)
         chunk_embedded = self.pos_enc1D_actions.compute(chunk_indices) # [N_c, d_model]
         x = x + chunk_embedded.unsqueeze(0) # [B, N_c, d_model]
-        
+
+        # embed memory with sinusoidal embedding
+        memory_indices = torch.arange(e.shape[1], dtype=torch.float32, device=device)
+        memory_embedded = self.pos_enc1D_actions.compute(memory_indices) # [seq_len, d_model]
+        e = e + memory_embedded.unsqueeze(0) # [B, seq_len, d_model]
+
         # embed time with sinusoidal embedding + MLP
         t = t.squeeze(-1) # [B, 1]
         t_embedded = self.pos_enc1D_time.compute(t) # [B, timestep_embed_dim]
@@ -1332,6 +1341,9 @@ class FlowHeadTransformerDecoder(nn.Module):
 
         # predict flow
         out = self.transformer_decoder(tgt=x, memory=e)  # [B, N_chunk, dim_model]
+
+        # final layer normalization for stability (since I used pre-norm)
+        out = self.final_norm(out)
 
         # final layer
         out = self.mlp_final(out)  # [B, N_chunk, act_dim]

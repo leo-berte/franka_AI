@@ -28,10 +28,22 @@ act:
 flowLeonardo:
 
   params:
-    N_history: 3
+    N_history: 1
     N_chunk: 100
     n_action_steps: 25
 
+    # Vision architecture params
+    vision_backbone_name: "resnet18d.ra2_in1k" # ["resnet18d.ra2_in1k" "vit_base_patch16_224.mae" "vit_base_patch14_dinov2.lvd142m" "vit_base_patch14_reg4_dinov2.lvd142m"]
+    freeze_vision_backbone: True
+
+    # Perceiver resampler params
+    use_perceiver_resampler: False
+    resampler_params:
+      depth: 4
+      dim_head: 64
+      heads: 8
+      num_latents: 64
+      
     # Transformer encoder
     dim_model: 512
     dim_feedforward_enc: 3200
@@ -39,7 +51,7 @@ flowLeonardo:
     num_layers_enc: 4
     
     # FM head type
-    head_type: "flow_matching_mlp" # ["mlp" "flow_matching_mlp" "flow_matching_unet" "flow_matching_transformer"]
+    head_type: "flow_matching_transformer" # ["mlp" "flow_matching_mlp" "flow_matching_unet" "flow_matching_transformer"]
 
     # Common
     use_film: True
