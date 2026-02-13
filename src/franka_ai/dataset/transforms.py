@@ -94,18 +94,18 @@ class CustomTransforms():
                 p=vis_aug_cfg["color_jitter"]["p"],
                 same_on_batch=False,
                 ),
-            K.RandomGaussianBlur(
-                kernel_size=tuple(vis_aug_cfg["gaussian_blur"]["kernel_size"]),
-                sigma=tuple(vis_aug_cfg["gaussian_blur"]["sigma"]),
-                p=vis_aug_cfg["gaussian_blur"]["p"],
-                same_on_batch=False,
-                ),
-            K.RandomAffine(
-                degrees=vis_aug_cfg["random_affine"]["degrees"],
-                translate=tuple(vis_aug_cfg["random_affine"]["translate"]),
-                p=vis_aug_cfg["random_affine"]["p"],
-                same_on_batch=False,
-                ),
+            # K.RandomGaussianBlur(
+            #     kernel_size=tuple(vis_aug_cfg["gaussian_blur"]["kernel_size"]),
+            #     sigma=tuple(vis_aug_cfg["gaussian_blur"]["sigma"]),
+            #     p=vis_aug_cfg["gaussian_blur"]["p"],
+            #     same_on_batch=False,
+            #     ),
+            # K.RandomAffine(
+            #     degrees=vis_aug_cfg["random_affine"]["degrees"],
+            #     translate=tuple(vis_aug_cfg["random_affine"]["translate"]),
+            #     p=vis_aug_cfg["random_affine"]["p"],
+            #     same_on_batch=False,
+            #     ),
             data_format="BTCHW", 
             same_on_frame=True # apply same transform to all the history
         )

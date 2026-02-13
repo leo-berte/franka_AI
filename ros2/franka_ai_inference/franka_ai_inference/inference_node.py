@@ -60,9 +60,19 @@ checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act9_2026-02-03_20-43-03"
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_act_grasp_4pos_new_outliers/config_act3_25_perc_2026-02-05_07-53-58"
 
+# grasp 4pos outliers with FLOW LEONARDO
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_flowLeonardo_grasp_4pos_new_outliers/config_act_A_2026-02-09_17-05-11"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_flowLeonardo_grasp_4pos_new_outliers/config_act_B_2026-02-11_02-49-11" # 2/4 works
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/grasp_4pos_new_outliers_flowLeonardo_grasp_4pos_new_outliers/config_act_C_2026-02-09_17-05-47" # 1/4 works
+
 # columns
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/columns_leo_act_columns_leo/config_act3_2026-02-04_16-18-44"
 # checkpoint_rel_path = "../workspace/outputs/checkpoints/columns_mathis_act_columns_mathis/config_act3_2026-02-04_16-17-02"
+
+# cubes generalization
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_gen_pp_act_cubes_gen_pp/config_act3_2026-02-06_21-08-35"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_gen_pp_act_cubes_gen_pp/config_act5_2026-02-06_21-08-59"
+# checkpoint_rel_path = "../workspace/outputs/checkpoints/cubes_gen_pp_act_cubes_gen_pp/config_act8_2026-02-08_04-47-17" # --> relative is bad
 
 
 
@@ -204,7 +214,7 @@ class FrankaInference(Node):
 
         # Load policy
         PolicyClass = get_policy_class(policy_name)
-        self.policy = PolicyClass.from_pretrained(f"{checkpoint_rel_path}/step_00070000.pt") # best_model.pt
+        self.policy = PolicyClass.from_pretrained(f"{checkpoint_rel_path}/step_00080000.pt") # best_model.pt
         self.policy.reset() # reset the policy to prepare for rollout
 
         # Compute policy steps

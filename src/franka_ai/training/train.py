@@ -155,7 +155,7 @@ def train():
         dataloader_cfg=dataloader_cfg,
         dataset_cfg=dataset_cfg,
         model_cfg=model_cfg,
-        selected_episodes=[0]
+        # selected_episodes=[0]
     )
 
     # ---------------------
